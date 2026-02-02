@@ -1,4 +1,4 @@
-package com.example.intellicawifi_cross
+package com.intellica.wifi
 
 import io.flutter.embedding.android.FlutterActivity
 
