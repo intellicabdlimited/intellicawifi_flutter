@@ -160,7 +160,7 @@ class SmartHomeViewModel extends ChangeNotifier {
     notifyListeners();
   }
   
-  Future<void> commissionDevice(String pairingCode, String deviceLabel) async {
+  Future<void> commissionDevice(String pairingCode) async {
     _isOperationLoading = true;
     notifyListeners();
 
@@ -184,12 +184,7 @@ class SmartHomeViewModel extends ChangeNotifier {
         print('nodeId: $nodeId');
 
         if (status == "commissionedsuccessfully") {
-          if (nodeId.isNotEmpty && nodeId != "N/A") {
-            await _repository.setDeviceLabel(nodeId, deviceLabel);
-            _operationResult = UiState.success("Device commissioned and labeled as $deviceLabel");
-          } else {
-            _operationResult = UiState.success("Device commissioned successfully (Label pending - ID not found)");
-          }
+          _operationResult = UiState.success("Device commissioned successfully");
         } else {
            _operationResult = UiState.error("Failed to commission device");
         }
