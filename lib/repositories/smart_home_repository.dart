@@ -149,37 +149,42 @@ class SmartHomeRepository {
         return [];
     }
 
-    // Check if it's the new verbose format
+    // Check if it's the new verbose format (e.g. "2470ed7a47084a67: Class: light" then "Label: Matter Light")
     if (raw.contains("Class:")) {
       final lines = raw.split('\n');
       final devices = <SmartDevice>[];
       String? currentId;
 
-      final idRegex = RegExp(r'^([0-9a-fA-F]+): Class:');
-      final labelRegex = RegExp(r'Label: (.*)');
+      final idAndClassRegex = RegExp(r'^\s*([0-9a-fA-F]+):\s*Class:\s*(\w+)');
+      final labelRegex = RegExp(r'Label:\s*(.*)');
 
       for (var line in lines) {
-        line = line.trim();
-        if (line.isEmpty) continue;
-        if (line.startsWith("barton-core>")) continue;
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        if (trimmed.startsWith("barton-core>")) continue;
 
-        final idMatch = idRegex.firstMatch(line);
-        if (idMatch != null) {
-          currentId = idMatch.group(1);
+        final idClassMatch = idAndClassRegex.firstMatch(line);
+        if (idClassMatch != null) {
+          currentId = idClassMatch.group(1);
+          final deviceClass = (idClassMatch.group(2) ?? "light").toLowerCase();
           if (currentId != null) {
-             devices.add(SmartDevice(nodeId: currentId, label: "Unknown Device"));
+            devices.add(SmartDevice(
+              nodeId: currentId,
+              label: "Unknown Device",
+              deviceClass: deviceClass,
+            ));
           }
         } else if (currentId != null && line.contains("Label:")) {
-             final labelMatch = labelRegex.firstMatch(line);
-             if (labelMatch != null) {
-                 var label = labelMatch.group(1)?.trim() ?? "Unknown Device";
-                 if (label.endsWith(',')) {
-                     label = label.substring(0, label.length - 1);
-                 }
-                 if (devices.isNotEmpty && devices.last.nodeId == currentId) {
-                    devices[devices.length - 1] = devices.last.copyWith(label: label);
-                 }
-             }
+          final labelMatch = labelRegex.firstMatch(line);
+          if (labelMatch != null) {
+            var label = labelMatch.group(1)?.trim() ?? "Unknown Device";
+            if (label.endsWith(',')) {
+              label = label.substring(0, label.length - 1);
+            }
+            if (devices.isNotEmpty && devices.last.nodeId == currentId) {
+              devices[devices.length - 1] = devices.last.copyWith(label: label);
+            }
+          }
         }
       }
       return devices;
@@ -189,7 +194,7 @@ class SmartHomeRepository {
           .split(RegExp(r'[, \n\t]+'))
           .map((s) => s.trim())
           .where((s) => s.isNotEmpty && s != "barton-core>")
-          .map((id) => SmartDevice(nodeId: id))
+          .map((id) => SmartDevice(nodeId: id, deviceClass: "light"))
           .toList();
     }
   }

@@ -238,6 +238,7 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
   }
 
   Widget _buildDeviceCard(SmartDevice device, SmartHomeViewModel vm) {
+    final isLight = device.deviceClass == "light";
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -245,7 +246,11 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.lightbulb, size: 32, color: Colors.orange),
+                Icon(
+                  isLight ? Icons.lightbulb : Icons.power,
+                  size: 32,
+                  color: isLight ? Colors.orange : Colors.blue,
+                ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -264,7 +269,7 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
                           ),
                         ],
                       ),
-                      Text("ID: ${device.nodeId}", style: const TextStyle(color: Colors.grey)),
+                      Text("Class: ${device.deviceClass}", style: const TextStyle(color: Colors.grey)),
                     ],
                   ),
                 ),
@@ -280,36 +285,37 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
                 ),
               ],
             ),
-
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showColorPickerWithDialog(device),
-                    icon: const Icon(Icons.palette, size: 18),
-                    label: const Text("", style: TextStyle(fontSize: 12)),
+            if (isLight) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showColorPickerWithDialog(device),
+                      icon: const Icon(Icons.palette, size: 18),
+                      label: const Text("", style: TextStyle(fontSize: 12)),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showBrightnessDialog(device),
-                    icon: const Icon(Icons.wb_sunny, size: 18),
-                    label: const Text("", style: TextStyle(fontSize: 12)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showBrightnessDialog(device),
+                      icon: const Icon(Icons.wb_sunny, size: 18),
+                      label: const Text("", style: TextStyle(fontSize: 12)),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showSaturationDialog(device),
-                    icon: const Icon(Icons.contrast, size: 18), // Use nearest material icon
-                    label: const Text("", style: TextStyle(fontSize: 12)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showSaturationDialog(device),
+                      icon: const Icon(Icons.contrast, size: 18),
+                      label: const Text("", style: TextStyle(fontSize: 12)),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
             const Divider(),
             const SizedBox(height: 8),
             _buildTimerSection(device, vm),
