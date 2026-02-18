@@ -148,6 +148,7 @@ class SmartHomeViewModel extends ChangeNotifier {
       if (success) {
         await _repository.removeDeviceConfig(nodeId);
         _operationResult = UiState.success("Device removed successfully");
+        await Future.delayed(const Duration(seconds: 5));
         loadDevices();
       } else {
          _operationResult = UiState.error("Failed to remove device");
