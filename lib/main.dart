@@ -13,6 +13,8 @@ import 'screens/device_details_screen.dart';
 import 'screens/router_settings_screen.dart';
 import 'screens/smart_home_screen.dart';
 import 'screens/about_router_screen.dart';
+import 'screens/troubleshooting_screen.dart';
+import 'screens/firmware_upgrade_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,6 +55,8 @@ class MyApp extends StatelessWidget {
         '/smart_home': (context) => const SmartHomeScreen(),
         '/router_settings': (context) => const RouterSettingsScreen(),
         '/about_router': (context) => const AboutRouterScreen(),
+        '/troubleshooting': (context) => const TroubleshootingScreen(),
+        '/firmware_upgrade': (context) => const FirmwareUpgradeScreen(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/device_details') {
