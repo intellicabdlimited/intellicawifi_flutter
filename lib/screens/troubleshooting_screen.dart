@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'troubleshoot_result_screen.dart';
 
 class TroubleshootingScreen extends StatelessWidget {
   const TroubleshootingScreen({super.key});
@@ -19,8 +20,7 @@ class TroubleshootingScreen extends StatelessWidget {
             subtitle: "Measure download and upload speeds",
             icon: Icons.speed_rounded,
             color: Colors.blue,
-            onTap: () => _openPlaceholder(context, "Speed test",
-                "Run a network speed test. API integration coming soon."),
+            onTap: () => _openResultScreen(context, "Speed test", "Device.Bananapi.temp2"),
           ),
           const SizedBox(height: 12),
           _buildSubsegmentCard(
@@ -29,8 +29,7 @@ class TroubleshootingScreen extends StatelessWidget {
             subtitle: "Trace the route to a host",
             icon: Icons.route_rounded,
             color: Colors.orange,
-            onTap: () => _openPlaceholder(context, "Traceroute",
-                "View hop-by-hop path to a destination. API integration coming soon."),
+            onTap: () => _openResultScreen(context, "Traceroute", "Device.Bananapi.temp3"),
           ),
           const SizedBox(height: 12),
           _buildSubsegmentCard(
@@ -39,8 +38,7 @@ class TroubleshootingScreen extends StatelessWidget {
             subtitle: "Quick connectivity and health checks",
             icon: Icons.health_and_safety_rounded,
             color: Colors.green,
-            onTap: () => _openPlaceholder(context, "Sanity test",
-                "Run basic sanity checks on the router. API integration coming soon."),
+            onTap: () => _openResultScreen(context, "Sanity test", "Device.Bananapi.temp1"),
           ),
         ],
       ),
@@ -108,48 +106,13 @@ class TroubleshootingScreen extends StatelessWidget {
     );
   }
 
-  void _openPlaceholder(BuildContext context, String title, String message) {
+  void _openResultScreen(BuildContext context, String title, String parameterName) {
     Navigator.push(
       context,
       MaterialPageRoute<void>(
-        builder: (context) => _PlaceholderScreen(title: title, message: message),
-      ),
-    );
-  }
-}
-
-class _PlaceholderScreen extends StatelessWidget {
-  final String title;
-  final String message;
-
-  const _PlaceholderScreen({required this.title, required this.message});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.build_circle_outlined,
-                size: 80,
-                color: AppTheme.primaryColor.withOpacity(0.5),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
-                ),
-              ),
-            ],
-          ),
+        builder: (context) => TroubleshootResultScreen(
+          title: title,
+          parameterName: parameterName,
         ),
       ),
     );
