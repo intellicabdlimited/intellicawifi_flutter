@@ -180,3 +180,36 @@ class SetParameter {
     };
   }
 }
+
+/// XConf SWU STB response for firmware upgrade.
+class XConfFirmwareInfo {
+  final String firmwareDownloadProtocol;
+  final String firmwareFilename;
+  final String firmwareLocation;
+  final String info;
+
+  XConfFirmwareInfo({
+    this.firmwareDownloadProtocol = '',
+    this.firmwareFilename = '',
+    this.firmwareLocation = '',
+    this.info = '',
+  });
+
+  factory XConfFirmwareInfo.fromJson(Map<String, dynamic> json) {
+    return XConfFirmwareInfo(
+      firmwareDownloadProtocol: (json['firmwareDownloadProtocol'] ?? '').toString(),
+      firmwareFilename: (json['firmwareFilename'] ?? '').toString(),
+      firmwareLocation: (json['firmwareLocation'] ?? '').toString(),
+      info: (json['info'] ?? '').toString(),
+    );
+  }
+
+  /// Display name: filename without .bin.wic.bz2 suffix.
+  String get displayFilename {
+    const suffix = '.bin.wic.bz2';
+    if (firmwareFilename.endsWith(suffix)) {
+      return firmwareFilename.substring(0, firmwareFilename.length - suffix.length);
+    }
+    return firmwareFilename;
+  }
+}

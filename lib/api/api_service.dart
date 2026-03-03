@@ -7,6 +7,8 @@ import '../models/models.dart';
 class ApiService {
   static const String _baseUrl = "https://webpa.rdkcentral.com:9003";
   static const String _authHeader = "Basic d3B1c2VyOndlYnBhQDEyMzQ1Njc4OTAK";
+  /// XConf SWU base URL (no trailing slash). Use HTTP for local/device server.
+  static const String xconfBaseUrl = "http://192.168.1.208:19092";
 
   // Create an IOClient that ignores bad certificates (unsafe, matching original logic)
   static http.Client _createHttpClient() {
@@ -133,6 +135,31 @@ class ApiService {
       }
     } catch (e) {
       print("API Error: $e");
+      rethrow;
+    }
+  }
+
+  /// Fetches firmware metadata from XConf SWU STB endpoint.
+  /// [macWithColons] should be in format "02:01:00:8E:5E:97".
+  Future<XConfFirmwareInfo> getXconfFirmwareInfo(String macWithColons) async {
+    final url = Uri.parse("$xconfBaseUrl/xconf/swu/stb?eStbMac=$macWithColons");
+    print("------------------------------------------------------------------");
+    print("XConf Request: GET $url");
+    print("------------------------------------------------------------------");
+    try {
+      final response = await _client.get(url);
+      print("------------------------------------------------------------------");
+      print("XConf Response: ${response.statusCode}");
+      print("Response Body: ${response.body}");
+      print("------------------------------------------------------------------");
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final jsonMap = jsonDecode(response.body) as Map<String, dynamic>;
+        return XConfFirmwareInfo.fromJson(jsonMap);
+      } else {
+        throw HttpException("XConf failed: ${response.statusCode} ${response.body}");
+      }
+    } catch (e) {
+      print("XConf API Error: $e");
       rethrow;
     }
   }
