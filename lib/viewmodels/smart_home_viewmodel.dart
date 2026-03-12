@@ -389,4 +389,142 @@ class SmartHomeViewModel extends ChangeNotifier {
     _operationResult = null;
     notifyListeners();
   }
+
+  /// Starts Zigbee discovery (WebPA Device.Barton.temp1 = "discoverStart light").
+  Future<bool> startZigbeeDiscovery() async {
+    try {
+      return await _repository.setBartonTemp1("discoverStart light");
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Stops Zigbee discovery (WebPA Device.Barton.temp1 = "discoverStop"), waits 2s, then refreshes device list.
+  Future<void> stopZigbeeDiscoveryAndRefresh() async {
+    try {
+      await _repository.setBartonTemp1("discoverStop");
+      await Future.delayed(const Duration(seconds: 2));
+      loadDevices();
+    } catch (_) {
+      loadDevices();
+    }
+  }
+
+  // --- Zigbee light controls (writeResource APIs) ---
+
+  Future<void> toggleZigbeeDevice(String nodeId, bool currentStatus) async {
+    _isOperationLoading = true;
+    notifyListeners();
+    try {
+      final success = await _repository.setZigbeeIsOn(nodeId, !currentStatus);
+      if (success && _devices.status == UiStatus.success) {
+        final currentList = _devices.data!;
+        final updatedList = currentList.map((d) {
+          if (d.nodeId == nodeId) return d.copyWith(isOn: !currentStatus);
+          return d;
+        }).toList();
+        _devices = UiState.success(updatedList);
+        for (var d in updatedList) {
+          if (d.nodeId == nodeId) await _repository.saveDeviceConfig(d);
+        }
+        _operationResult = UiState.success("Device ${!currentStatus ? "turned on" : "turned off"}");
+      } else if (!success) {
+        _operationResult = UiState.error("Failed to toggle device");
+      }
+    } catch (e) {
+      _operationResult = UiState.error(e.toString());
+    }
+    _isOperationLoading = false;
+    notifyListeners();
+  }
+
+  /// [percent] 1-100, mapped to 153-500.
+  Future<void> setZigbeeColorTemp(String nodeId, int percent) async {
+    _isOperationLoading = true;
+    notifyListeners();
+    try {
+      final value = 153 + (347 * (percent.clamp(1, 100) / 100)).round();
+      final success = await _repository.setZigbeeColorTemp(nodeId, value);
+      if (success) {
+        await _repository.saveZigbeeColorTempState(nodeId, percent.clamp(1, 100));
+        _operationResult = UiState.success("Color temperature updated");
+      } else {
+        _operationResult = UiState.error("Failed to set color temperature");
+      }
+    } catch (e) {
+      _operationResult = UiState.error(e.toString());
+    }
+    _isOperationLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> setZigbeeColorXY(String nodeId, double x, double y) async {
+    _isOperationLoading = true;
+    notifyListeners();
+    try {
+      final success = await _repository.setZigbeeColorXY(nodeId, x, y);
+      if (success) {
+        await _repository.saveZigbeeColorXYState(nodeId, x, y);
+        _operationResult = UiState.success("Color updated successfully");
+      } else {
+        _operationResult = UiState.error("Failed to update color");
+      }
+    } catch (e) {
+      _operationResult = UiState.error(e.toString());
+    }
+    _isOperationLoading = false;
+    notifyListeners();
+  }
+
+  /// [percent] 0-100, mapped to 0-254.
+  Future<void> setZigbeeBrightness(String nodeId, int percent) async {
+    _isOperationLoading = true;
+    notifyListeners();
+    try {
+      final level = ((percent.clamp(0, 100) / 100.0) * 254).round();
+      final success = await _repository.setZigbeeCurrentLevel(nodeId, level);
+      if (success && _devices.status == UiStatus.success) {
+        final currentList = _devices.data!;
+        final updatedList = <SmartDevice>[];
+        for (var d in currentList) {
+          if (d.nodeId == nodeId) {
+            final updatedDevice = d.copyWith(brightness: percent);
+            updatedList.add(updatedDevice);
+            await _repository.saveDeviceConfig(updatedDevice);
+          } else {
+            updatedList.add(d);
+          }
+        }
+        _devices = UiState.success(updatedList);
+        _operationResult = UiState.success("Brightness updated successfully");
+      } else if (!success) {
+        _operationResult = UiState.error("Failed to update brightness");
+      }
+    } catch (e) {
+      _operationResult = UiState.error(e.toString());
+    }
+    _isOperationLoading = false;
+    notifyListeners();
+  }
+
+  Future<ZigbeeSavedState?> getZigbeeState(String nodeId) async =>
+      _repository.getZigbeeState(nodeId);
+
+  Future<void> setZigbeeLabel(String nodeId, String label) async {
+    _isOperationLoading = true;
+    notifyListeners();
+    try {
+      final success = await _repository.setZigbeeLabel(nodeId, label);
+      if (success) {
+        _operationResult = UiState.success("Label updated successfully");
+        loadDevices();
+      } else {
+        _operationResult = UiState.error("Failed to update label");
+      }
+    } catch (e) {
+      _operationResult = UiState.error(e.toString());
+    }
+    _isOperationLoading = false;
+    notifyListeners();
+  }
 }

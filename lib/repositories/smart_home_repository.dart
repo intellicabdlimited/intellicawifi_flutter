@@ -110,6 +110,45 @@ class SmartHomeRepository {
     return _sendSetRequest("Device.Barton.temp", value);
   }
 
+  /// Sets Device.Barton.temp1 (e.g. "discoverStart light", "discoverStop" for Zigbee discovery).
+  Future<bool> setBartonTemp1(String value) async {
+    return _sendSetRequest("Device.Barton.temp1", value);
+  }
+
+  // --- Zigbee writeResource APIs (Device.Barton.temp1 with writeResource string) ---
+
+  /// Zigbee color XY: value "writeResource /nodeId/ep/1/r/colorXY x,y"
+  Future<bool> setZigbeeColorXY(String nodeId, double x, double y) async {
+    final value = "writeResource /$nodeId/ep/1/r/colorXY $x,$y";
+    return setBartonTemp1(value);
+  }
+
+  /// Zigbee color temperature: value 153-500.
+  Future<bool> setZigbeeColorTemp(String nodeId, int value) async {
+    final v = value.clamp(153, 500);
+    final str = "writeResource /$nodeId/ep/1/r/colorTemp $v";
+    return setBartonTemp1(str);
+  }
+
+  /// Zigbee level: 0-254.
+  Future<bool> setZigbeeCurrentLevel(String nodeId, int level) async {
+    final v = level.clamp(0, 254);
+    final str = "writeResource /$nodeId/ep/1/r/currentLevel $v";
+    return setBartonTemp1(str);
+  }
+
+  /// Zigbee on/off: true or false.
+  Future<bool> setZigbeeIsOn(String nodeId, bool isOn) async {
+    final str = "writeResource /$nodeId/ep/1/r/isOn ${isOn ? "true" : "false"}";
+    return setBartonTemp1(str);
+  }
+
+  /// Zigbee label: any string, sent as "label" resource with quoted value.
+  Future<bool> setZigbeeLabel(String nodeId, String label) async {
+    final str = "writeResource /$nodeId/ep/1/r/label '$label'";
+    return setBartonTemp1(str);
+  }
+
   Future<String> getDeviceLightClass() async {
     final deviceMac = await RouterMacManager.getMac();
     try {
@@ -149,13 +188,14 @@ class SmartHomeRepository {
         return [];
     }
 
-    // Check if it's the new verbose format (e.g. "2470ed7a47084a67: Class: light" then "Label: Matter Light")
+    // Verbose format: "nodeId: Class: light, Driver: zigbeeLight" then optional "Endpoint 1: ... Label: Matter Light"
     if (raw.contains("Class:")) {
       final lines = raw.split('\n');
       final devices = <SmartDevice>[];
       String? currentId;
 
-      final idAndClassRegex = RegExp(r'^\s*([0-9a-fA-F]+):\s*Class:\s*(\w+)');
+      // Match: nodeId: Class: light, Driver: zigbeeLight (Driver is optional for backward compatibility)
+      final idClassDriverRegex = RegExp(r'^\s*([0-9a-fA-F]+):\s*Class:\s*(\w+)(?:,\s*Driver:\s*(\w+))?');
       final labelRegex = RegExp(r'Label:\s*(.*)');
 
       for (var line in lines) {
@@ -163,15 +203,17 @@ class SmartHomeRepository {
         if (trimmed.isEmpty) continue;
         if (trimmed.startsWith("barton-core>")) continue;
 
-        final idClassMatch = idAndClassRegex.firstMatch(line);
-        if (idClassMatch != null) {
-          currentId = idClassMatch.group(1);
-          final deviceClass = (idClassMatch.group(2) ?? "light").toLowerCase();
+        final idClassDriverMatch = idClassDriverRegex.firstMatch(line);
+        if (idClassDriverMatch != null) {
+          currentId = idClassDriverMatch.group(1);
+          final deviceClass = (idClassDriverMatch.group(2) ?? "light").toLowerCase();
+          final driver = idClassDriverMatch.group(3) ?? "";
           if (currentId != null) {
             devices.add(SmartDevice(
               nodeId: currentId,
               label: "Unknown Device",
               deviceClass: deviceClass,
+              driver: driver,
             ));
           }
         } else if (currentId != null && line.contains("Label:")) {
@@ -180,6 +222,9 @@ class SmartHomeRepository {
             var label = labelMatch.group(1)?.trim() ?? "Unknown Device";
             if (label.endsWith(',')) {
               label = label.substring(0, label.length - 1);
+            }
+            if (label.isEmpty || label == "(null)") {
+              label = "Unknown Device";
             }
             if (devices.isNotEmpty && devices.last.nodeId == currentId) {
               devices[devices.length - 1] = devices.last.copyWith(label: label);
@@ -194,7 +239,7 @@ class SmartHomeRepository {
           .split(RegExp(r'[, \n\t]+'))
           .map((s) => s.trim())
           .where((s) => s.isNotEmpty && s != "barton-core>")
-          .map((id) => SmartDevice(nodeId: id, deviceClass: "light"))
+          .map((id) => SmartDevice(nodeId: id, deviceClass: "light", driver: ""))
           .toList();
     }
   }
@@ -233,6 +278,41 @@ class SmartHomeRepository {
     final prefs = await SharedPreferences.getInstance();
     final key = "device_config_$nodeId";
     await prefs.remove(key);
+    await prefs.remove("zigbee_xy_$nodeId");
+    await prefs.remove("zigbee_temp_$nodeId");
+  }
+
+  /// Last selected xy color for Zigbee light (persisted locally).
+  Future<void> saveZigbeeColorXYState(String nodeId, double x, double y) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("zigbee_xy_$nodeId", "$x,$y");
+  }
+
+  /// Last selected color temperature percent (1-100) for Zigbee light.
+  Future<void> saveZigbeeColorTempState(String nodeId, int percent) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("zigbee_temp_$nodeId", "$percent");
+  }
+
+  /// Load persisted Zigbee state: xy (x, y) and colorTempPercent. Missing values return null.
+  Future<ZigbeeSavedState?> getZigbeeState(String nodeId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final xyStr = prefs.getString("zigbee_xy_$nodeId");
+    final tempStr = prefs.getString("zigbee_temp_$nodeId");
+    double? x, y;
+    int? colorTempPercent;
+    if (xyStr != null && xyStr.isNotEmpty) {
+      final parts = xyStr.split(',');
+      if (parts.length >= 2) {
+        x = double.tryParse(parts[0]);
+        y = double.tryParse(parts[1]);
+      }
+    }
+    if (tempStr != null && tempStr.isNotEmpty) {
+      colorTempPercent = int.tryParse(tempStr);
+    }
+    if (x == null && y == null && colorTempPercent == null) return null;
+    return ZigbeeSavedState(colorX: x, colorY: y, colorTempPercent: colorTempPercent);
   }
 
   Future<void> saveDeviceTimerInfo(String nodeId, int targetEpoch, String action) async {
@@ -263,6 +343,14 @@ class SmartHomeRepository {
     final key = "device_timer_$nodeId";
     await prefs.remove(key);
   }
+}
+
+class ZigbeeSavedState {
+  final double? colorX;
+  final double? colorY;
+  final int? colorTempPercent;
+
+  ZigbeeSavedState({this.colorX, this.colorY, this.colorTempPercent});
 }
 
 extension ListExtension<T> on List<T> {

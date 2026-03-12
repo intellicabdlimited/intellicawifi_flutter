@@ -5,6 +5,7 @@ import '../viewmodels/smart_home_viewmodel.dart';
 import '../utils/ui_state.dart';
 import '../models/models.dart';
 import '../widgets/circular_color_picker.dart';
+import '../widgets/zigbee_circular_color_picker.dart';
 
 import 'qr_scanner_screen.dart';
 import 'package:wifi_scan/wifi_scan.dart';
@@ -166,7 +167,7 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddOptions(),
+        onPressed: () => _showDeviceTypeDialog(),
         child: const Icon(Icons.add),
       ),
       body: Consumer<SmartHomeViewModel>(
@@ -239,6 +240,23 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
 
   Widget _buildDeviceCard(SmartDevice device, SmartHomeViewModel vm) {
     final isLight = device.deviceClass == "light";
+    final driver = device.driver;
+    // Icon and color based on driver when available, else deviceClass
+    final IconData deviceIcon;
+    final Color iconColor;
+    if (driver == "zigbeeLight") {
+      deviceIcon = Icons.lightbulb_outline;
+      iconColor = Colors.amber;
+    } else if (driver == "matterLight") {
+      deviceIcon = Icons.lightbulb;
+      iconColor = Colors.orange;
+    } else if (driver == "matterPlug" || driver == "zigbeePlug") {
+      deviceIcon = Icons.power;
+      iconColor = Colors.blue;
+    } else {
+      deviceIcon = isLight ? Icons.lightbulb : Icons.power;
+      iconColor = isLight ? Colors.orange : Colors.blue;
+    }
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -247,9 +265,9 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
             Row(
               children: [
                 Icon(
-                  isLight ? Icons.lightbulb : Icons.power,
+                  deviceIcon,
                   size: 32,
-                  color: isLight ? Colors.orange : Colors.blue,
+                  color: iconColor,
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -269,14 +287,23 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
                           ),
                         ],
                       ),
-                      Text("Class: ${device.deviceClass}", style: const TextStyle(color: Colors.grey)),
+                      Text(
+                        device.driver.isNotEmpty
+                            ? "Class: ${device.deviceClass}, Driver: ${device.driver}"
+                            : "Class: ${device.deviceClass}",
+                        style: const TextStyle(color: Colors.grey),
+                      ),
                     ],
                   ),
                 ),
                 Switch(
                   value: device.isOn,
                   onChanged: (val) {
-                    vm.toggleDevice(device.nodeId, device.isOn);
+                    if (driver == "zigbeeLight") {
+                      vm.toggleZigbeeDevice(device.nodeId, device.isOn);
+                    } else {
+                      vm.toggleDevice(device.nodeId, device.isOn);
+                    }
                   },
                 ),
                 IconButton(
@@ -289,36 +316,62 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _showColorPickerWithDialog(device),
-                      icon: const Icon(Icons.palette, size: 18),
-                      label: const Text("", style: TextStyle(fontSize: 12)),
+                  if (driver == "zigbeeLight") ...[
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showZigbeeColorPickerDialog(device),
+                        icon: const Icon(Icons.palette, size: 18),
+                        label: const Text("", style: TextStyle(fontSize: 12)),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _showBrightnessDialog(device),
-                      icon: const Icon(Icons.wb_sunny, size: 18),
-                      label: const Text("", style: TextStyle(fontSize: 12)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showZigbeeBrightnessDialog(device),
+                        icon: const Icon(Icons.wb_sunny, size: 18),
+                        label: const Text("", style: TextStyle(fontSize: 12)),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _showSaturationDialog(device),
-                      icon: const Icon(Icons.contrast, size: 18),
-                      label: const Text("", style: TextStyle(fontSize: 12)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showZigbeeColorTempDialog(device),
+                        icon: const Icon(Icons.thermostat, size: 18),
+                        label: const Text("", style: TextStyle(fontSize: 12)),
+                      ),
                     ),
-                  ),
+                  ] else ...[
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showColorPickerWithDialog(device),
+                        icon: const Icon(Icons.palette, size: 18),
+                        label: const Text("", style: TextStyle(fontSize: 12)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showBrightnessDialog(device),
+                        icon: const Icon(Icons.wb_sunny, size: 18),
+                        label: const Text("", style: TextStyle(fontSize: 12)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showSaturationDialog(device),
+                        icon: const Icon(Icons.contrast, size: 18),
+                        label: const Text("", style: TextStyle(fontSize: 12)),
+                      ),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 12),
             ],
             const Divider(),
             const SizedBox(height: 8),
-            _buildTimerSection(device, vm),
+            if (driver != "zigbeeLight") _buildTimerSection(device, vm),
           ],
         ),
       ),
@@ -467,6 +520,184 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
     );
   }
 
+  Future<void> _showZigbeeColorPickerDialog(SmartDevice device) async {
+    final vm = context.read<SmartHomeViewModel>();
+    final state = await vm.getZigbeeState(device.nodeId);
+    final initialX = state?.colorX ?? 0.700;
+    final initialY = state?.colorY ?? 0.300;
+    double selectedX = initialX;
+    double selectedY = initialY;
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text("Select Color"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text("Device: ${device.nodeId}", style: const TextStyle(color: Colors.grey)),
+              const SizedBox(height: 16),
+              ZigbeeCircularColorPicker(
+                initialX: initialX,
+                initialY: initialY,
+                onColorSelected: (name, x, y) {
+                  selectedX = x;
+                  selectedY = y;
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                context.read<SmartHomeViewModel>().setZigbeeColorXY(device.nodeId, selectedX, selectedY);
+                Navigator.pop(ctx);
+              },
+              child: const Text("Save"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showZigbeeColorTempDialog(SmartDevice device) async {
+    final vm = context.read<SmartHomeViewModel>();
+    final state = await vm.getZigbeeState(device.nodeId);
+    double percent = (state?.colorTempPercent ?? 50).toDouble().clamp(1.0, 100.0);
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            final value = (153 + (347 * percent / 100)).round();
+            return AlertDialog(
+              title: const Text("Color Temperature"),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text("Device: ${device.nodeId}", style: const TextStyle(color: Colors.grey)),
+                  const SizedBox(height: 16),
+                  Text("${percent.round()}% • $value K", style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  Row(
+                    children: [
+                      const Text("Cool", style: TextStyle(fontSize: 12, color: Colors.blue)),
+                      Expanded(
+                        child: Slider(
+                          value: percent,
+                          min: 1,
+                          max: 100,
+                          divisions: 99,
+                          label: percent.round().toString(),
+                          onChanged: (val) => setState(() => percent = val),
+                        ),
+                      ),
+                      const Text("Warm", style: TextStyle(fontSize: 12, color: Colors.orange)),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+                ElevatedButton(
+                  onPressed: () {
+                    context.read<SmartHomeViewModel>().setZigbeeColorTemp(device.nodeId, percent.round());
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text("Save"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showZigbeeBrightnessDialog(SmartDevice device) {
+    double value = device.brightness.toDouble();
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text("Adjust Brightness"),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text("Device: ${device.nodeId}", style: const TextStyle(color: Colors.grey)),
+                  const SizedBox(height: 16),
+                  Text("${value.round()}%", style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  Slider(
+                    value: value,
+                    min: 0,
+                    max: 100,
+                    divisions: 100,
+                    label: value.round().toString(),
+                    onChanged: (val) => setState(() => value = val),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+                ElevatedButton(
+                  onPressed: () {
+                    context.read<SmartHomeViewModel>().setZigbeeBrightness(device.nodeId, value.round());
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text("Save"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showDeviceTypeDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Add Device"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.smart_toy),
+              title: const Text("Matter Device"),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showAddOptions();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.bluetooth_searching),
+              title: const Text("Zigbee Device"),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showZigbeeDiscoveryDialog();
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showAddOptions() {
     showModalBottomSheet(
       context: context,
@@ -509,6 +740,69 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
     );
   }
 
+  void _showZigbeeDiscoveryDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text("Zigbee Device"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "Start discovery to find nearby Zigbee devices.",
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _startZigbeeDiscoveryFlow(ctx),
+                  icon: const Icon(Icons.search),
+                  label: const Text("Discovery Start"),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _startZigbeeDiscoveryFlow(BuildContext dialogContext) async {
+    final vm = context.read<SmartHomeViewModel>();
+    final success = await vm.startZigbeeDiscovery();
+    if (!mounted) return;
+    if (!success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Failed to start discovery"), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    await _showZigbeeWaitingAndFinish(dialogContext);
+  }
+
+  Future<void> _showZigbeeWaitingAndFinish(BuildContext dialogContext) async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _ZigbeeWaitingDialog(
+        totalSeconds: 15,
+        onComplete: () => Navigator.of(ctx).pop(),
+      ),
+    );
+
+    if (!mounted) return;
+    Navigator.of(dialogContext).pop();
+    await context.read<SmartHomeViewModel>().stopZigbeeDiscoveryAndRefresh();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Discovery complete. Device list updated."), backgroundColor: Colors.green),
+      );
+    }
+  }
+
   void _showAddDeviceDialog() {
     final controller = TextEditingController();
     showDialog(
@@ -535,6 +829,7 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
 
   void _showEditLabelDialog(SmartDevice device) {
     final controller = TextEditingController(text: device.label);
+    final vm = context.read<SmartHomeViewModel>();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -551,7 +846,11 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
           ElevatedButton(
             onPressed: () {
               if (controller.text.isNotEmpty) {
-                context.read<SmartHomeViewModel>().setDeviceLabel(device.nodeId, controller.text);
+                if (device.driver == "zigbeeLight") {
+                  vm.setZigbeeLabel(device.nodeId, controller.text);
+                } else {
+                  vm.setDeviceLabel(device.nodeId, controller.text);
+                }
                 Navigator.pop(ctx);
               }
             },
@@ -795,5 +1094,56 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
       }
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
+  }
+}
+
+class _ZigbeeWaitingDialog extends StatefulWidget {
+  final int totalSeconds;
+  final VoidCallback onComplete;
+
+  const _ZigbeeWaitingDialog({
+    required this.totalSeconds,
+    required this.onComplete,
+  });
+
+  @override
+  State<_ZigbeeWaitingDialog> createState() => _ZigbeeWaitingDialogState();
+}
+
+class _ZigbeeWaitingDialogState extends State<_ZigbeeWaitingDialog> {
+  late int _remaining;
+
+  @override
+  void initState() {
+    super.initState();
+    _remaining = widget.totalSeconds;
+    _runCountdown();
+  }
+
+  Future<void> _runCountdown() async {
+    for (int i = 0; i < widget.totalSeconds; i++) {
+      await Future.delayed(const Duration(seconds: 1));
+      if (!mounted) return;
+      setState(() => _remaining = widget.totalSeconds - 1 - i);
+    }
+    if (mounted) widget.onComplete();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text("Discovering Zigbee devices"),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 24),
+          Text(
+            "Please wait... $_remaining seconds",
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ],
+      ),
+    );
   }
 }
