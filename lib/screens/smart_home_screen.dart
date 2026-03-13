@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import '../viewmodels/smart_home_viewmodel.dart';
 import '../utils/ui_state.dart';
 import '../models/models.dart';
-import '../widgets/circular_color_picker.dart';
-
 import 'qr_scanner_screen.dart';
 import 'package:wifi_scan/wifi_scan.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -172,16 +169,17 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
       body: Consumer<SmartHomeViewModel>(
         builder: (context, vm, child) {
           // Listen for operation result
-          if (vm.operationResult != null) {
+          if (vm.operationResult != null && ModalRoute.of(context)?.isCurrent == true) {
             final result = vm.operationResult!;
-            // Using addPostFrameCallback to avoid setstate during build
             WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              if (ModalRoute.of(context)?.isCurrent != true) return;
               if (result.status == UiStatus.success) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.data!), backgroundColor: Colors.green));
-                  vm.clearOperationResult();
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.data!), backgroundColor: Colors.green));
+                vm.clearOperationResult();
               } else if (result.status == UiStatus.error) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message!), backgroundColor: Colors.red));
-                  vm.clearOperationResult();
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message!), backgroundColor: Colors.red));
+                vm.clearOperationResult();
               }
             });
           }
@@ -237,233 +235,65 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
     );
   }
 
+  void _openDeviceControl(SmartDevice device) {
+    if (device.deviceClass == "thermostat") {
+      Navigator.pushNamed(context, '/thermostat_control', arguments: device);
+    } else if (device.deviceClass == "light") {
+      Navigator.pushNamed(context, '/light_control', arguments: device);
+    } else if (device.deviceClass == "plug") {
+      Navigator.pushNamed(context, '/plug_control', arguments: device);
+    } else {
+      Navigator.pushNamed(context, '/light_control', arguments: device);
+    }
+  }
+
   Widget _buildDeviceCard(SmartDevice device, SmartHomeViewModel vm) {
     final isLight = device.deviceClass == "light";
+    final isThermostat = device.deviceClass == "thermostat";
+    IconData icon;
+    Color iconColor;
+    if (isThermostat) {
+      icon = Icons.thermostat;
+      iconColor = Colors.blue.shade700;
+    } else if (isLight) {
+      icon = Icons.lightbulb;
+      iconColor = Colors.orange;
+    } else {
+      icon = Icons.power;
+      iconColor = Colors.blue;
+    }
+
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Icon(
-                  isLight ? Icons.lightbulb : Icons.power,
-                  size: 32,
-                  color: isLight ? Colors.orange : Colors.blue,
+      child: InkWell(
+        onTap: () => _openDeviceControl(device),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              Icon(icon, size: 36, color: iconColor),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(device.label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text("Class: ${device.deviceClass}", style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                  ],
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(device.label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.edit, size: 18),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            onPressed: () => _showEditLabelDialog(device),
-                          ),
-                        ],
-                      ),
-                      Text("Class: ${device.deviceClass}", style: const TextStyle(color: Colors.grey)),
-                    ],
-                  ),
-                ),
+              ),
+              if (!isThermostat)
                 Switch(
                   value: device.isOn,
-                  onChanged: (val) {
-                    vm.toggleDevice(device.nodeId, device.isOn);
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  onPressed: () => vm.removeDevice(device.nodeId),
-                ),
-              ],
-            ),
-            if (isLight) ...[
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _showColorPickerWithDialog(device),
-                      icon: const Icon(Icons.palette, size: 18),
-                      label: const Text("", style: TextStyle(fontSize: 12)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _showBrightnessDialog(device),
-                      icon: const Icon(Icons.wb_sunny, size: 18),
-                      label: const Text("", style: TextStyle(fontSize: 12)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _showSaturationDialog(device),
-                      icon: const Icon(Icons.contrast, size: 18),
-                      label: const Text("", style: TextStyle(fontSize: 12)),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-            ],
-            const Divider(),
-            const SizedBox(height: 8),
-            _buildTimerSection(device, vm),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showColorPickerWithDialog(SmartDevice device) {
-    String selectedColor = "Custom"; // You might want to map hue to name if possible, or leave as Custom
-    int selectedHue = device.hue;
-
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text("Select Color"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text("Device: ${device.nodeId}", style: const TextStyle(color: Colors.grey)),
-              const SizedBox(height: 16),
-              CircularColorPicker(
-                selectedHue: selectedHue,
-                onColorSelected: (name, hue) {
-                  selectedColor = name;
-                  selectedHue = hue;
-                },
-              ),
+                  onChanged: (val) => vm.toggleDevice(device.nodeId, device.isOn),
+                )
+              else
+                const SizedBox(width: 48),
+              Icon(Icons.chevron_right, color: Colors.grey.shade600),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text("Cancel"),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                context.read<SmartHomeViewModel>().setDeviceColor(
-                    device.nodeId, selectedHue);
-                Navigator.pop(ctx);
-              },
-              child: const Text("Save"),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showBrightnessDialog(SmartDevice device) {
-    double value = device.brightness.toDouble();
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text("Adjust Brightness"),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text("Device: ${device.nodeId}", style: const TextStyle(color: Colors.grey)),
-                  const SizedBox(height: 16),
-                  Text("${value.round()}%", style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                  Slider(
-                    value: value,
-                    min: 0,
-                    max: 100,
-                    divisions: 100,
-                    label: value.round().toString(),
-                    onChanged: (val) {
-                      setState(() {
-                        value = val;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text("Cancel"),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    context.read<SmartHomeViewModel>().setDeviceBrightness(
-                        device.nodeId, value.round());
-                    Navigator.pop(ctx);
-                  },
-                  child: const Text("Save"),
-                ),
-              ],
-            );
-          }
-        );
-      },
-    );
-  }
-
-  void _showSaturationDialog(SmartDevice device) {
-    double value = device.saturation.toDouble();
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text("Adjust Saturation"),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text("Device: ${device.nodeId}", style: const TextStyle(color: Colors.grey)),
-                  const SizedBox(height: 16),
-                  Text("${value.round()}%", style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                  Slider(
-                    value: value,
-                    min: 0,
-                    max: 100,
-                    divisions: 100,
-                    label: value.round().toString(),
-                    onChanged: (val) {
-                      setState(() {
-                        value = val;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text("Cancel"),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    context.read<SmartHomeViewModel>().setDeviceSaturation(
-                        device.nodeId, value.round());
-                    Navigator.pop(ctx);
-                  },
-                  child: const Text("Save"),
-                ),
-              ],
-            );
-          }
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -532,167 +362,6 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
       ),
     );
   }
-
-  void _showEditLabelDialog(SmartDevice device) {
-    final controller = TextEditingController(text: device.label);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Edit Label"),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(labelText: "Device Label"),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (controller.text.isNotEmpty) {
-                context.read<SmartHomeViewModel>().setDeviceLabel(device.nodeId, controller.text);
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text("Save"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTimerSection(SmartDevice device, SmartHomeViewModel vm) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          "Schedule ON/OFF",
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _showTimerDialog(device),
-                icon: const Icon(Icons.schedule, size: 18),
-                label: const Text("Set Timer", style: TextStyle(fontSize: 12)),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  void _showTimerDialog(SmartDevice device) {
-    TimeOfDay? selectedTime;
-    String? selectedAction;
-
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text("Set Timer"),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text("Device: ${device.nodeId}", style: const TextStyle(color: Colors.grey)),
-                  const SizedBox(height: 16),
-                  ListTile(
-                    title: const Text("Select Time"),
-                    trailing: Text(
-                      selectedTime != null
-                          ? "${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}"
-                          : "Not selected",
-                    ),
-                    onTap: () async {
-                      final time = await showTimePicker(
-                        context: context,
-                        initialTime: TimeOfDay.now(),
-                      );
-                      if (time != null) {
-                        setDialogState(() {
-                          selectedTime = time;
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  const Text("Select Action:", style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      ChoiceChip(
-                        label: const Text("ON"),
-                        selected: selectedAction == "on",
-                        onSelected: (selected) {
-                          setDialogState(() {
-                            selectedAction = selected ? "on" : null;
-                          });
-                        },
-                      ),
-                      ChoiceChip(
-                        label: const Text("OFF"),
-                        selected: selectedAction == "off",
-                        onSelected: (selected) {
-                          setDialogState(() {
-                            selectedAction = selected ? "off" : null;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text("Cancel"),
-                ),
-                ElevatedButton(
-                  onPressed: (selectedTime != null && selectedAction != null)
-                      ? () {
-                          // Calculate time difference in seconds
-                          final now = DateTime.now();
-                          final selectedDateTime = DateTime(
-                            now.year,
-                            now.month,
-                            now.day,
-                            selectedTime!.hour,
-                            selectedTime!.minute,
-                          );
-                          
-                          // If selected time is in the past, assume it's for tomorrow
-                          final targetDateTime = selectedDateTime.isBefore(now)
-                              ? selectedDateTime.add(const Duration(days: 1))
-                              : selectedDateTime;
-                          
-                          final difference = targetDateTime.difference(now);
-                          final timeInSeconds = difference.inSeconds;
-                          
-                          context.read<SmartHomeViewModel>().setDeviceTimer(
-                                device.nodeId,
-                                timeInSeconds,
-                                selectedAction!,
-                              );
-                          Navigator.pop(ctx);
-                        }
-                      : null,
-                  child: const Text("Save"),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
 
   Future<void> _scanAndSelectWifi(BuildContext context, TextEditingController ssidController) async {
     // Check permissions

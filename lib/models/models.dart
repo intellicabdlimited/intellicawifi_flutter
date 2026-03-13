@@ -203,7 +203,92 @@ class XConfFirmwareInfo {
       info: (json['info'] ?? '').toString(),
     );
   }
+}
 
+/// Thermostat state from printDevice response (Device.Barton.temp1).
+/// coolSetpoint/heatSetpoint in Celsius; systemMode: auto, heat, cool, off, emergencyHeat, fanOnly.
+class ThermostatState {
+  static const double heatSetpointMinC = 7.0;
+  static const double heatSetpointMaxC = 30.0;
+  static const double coolSetpointMinC = 16.0;
+  static const double coolSetpointMaxC = 32.0;
+  static const List<String> systemModes = [
+    'auto', 'cool', 'off', 'emergencyHeat', 'fanOnly',
+  ];
+  final double heatSetpoint;
+  final double coolSetpoint;
+  final String label;
+  final double localTemperature;
+  final String systemMode;
+
+  ThermostatState({
+    this.heatSetpoint = 20.0,
+    this.coolSetpoint = 24.0,
+    this.label = 'Thermostat',
+    this.localTemperature = 0.0,
+    this.systemMode = 'off',
+  });
+
+  ThermostatState copyWith({
+    double? heatSetpoint,
+    double? coolSetpoint,
+    String? label,
+    double? localTemperature,
+    String? systemMode,
+  }) {
+    return ThermostatState(
+      heatSetpoint: heatSetpoint ?? this.heatSetpoint,
+      coolSetpoint: coolSetpoint ?? this.coolSetpoint,
+      label: label ?? this.label,
+      localTemperature: localTemperature ?? this.localTemperature,
+      systemMode: systemMode ?? this.systemMode,
+    );
+  }
+
+  /// Parse printDevice response text (from WebPA GET Device.Barton.temp1 after sending printDevice).
+  /// Expects lines like: /nodeId/ep/1/r/coolSetpoint = 24.00
+  static ThermostatState? parsePrintDeviceResponse(String raw, [String? nodeId]) {
+    if (raw.isEmpty) return null;
+    double? heatSetpoint;
+    double? coolSetpoint;
+    String? label;
+    double? localTemperature;
+    String? systemMode;
+
+    final lines = raw.split('\n');
+    for (var line in lines) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+      // Match /nodeId/ep/1/r/name = value or Endpoint 1 block
+      final eqIdx = trimmed.indexOf('=');
+      if (eqIdx <= 0) continue;
+      final left = trimmed.substring(0, eqIdx).trim();
+      final value = trimmed.substring(eqIdx + 1).trim();
+      final leftKey = left.contains('/') ? left.substring(left.lastIndexOf('/') + 1) : left;
+      if (leftKey == 'heatSetpoint') {
+        heatSetpoint = double.tryParse(value);
+      } else if (leftKey == 'coolSetpoint') {
+        coolSetpoint = double.tryParse(value);
+      } else if (leftKey == 'label') {
+        label = value;
+      } else if (leftKey == 'localTemperature') {
+        localTemperature = double.tryParse(value);
+      } else if (leftKey == 'systemMode') {
+        systemMode = value;
+      }
+    }
+
+    return ThermostatState(
+      heatSetpoint: heatSetpoint ?? 20.0,
+      coolSetpoint: coolSetpoint ?? 24.0,
+      label: label ?? 'Thermostat',
+      localTemperature: localTemperature ?? 0.0,
+      systemMode: systemMode ?? 'off',
+    );
+  }
+}
+
+extension XConfFirmwareInfoDisplay on XConfFirmwareInfo {
   /// Display name: filename without .bin.wic.bz2 suffix.
   String get displayFilename {
     const suffix = '.bin.wic.bz2';

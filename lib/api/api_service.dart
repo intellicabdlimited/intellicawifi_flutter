@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -23,10 +24,10 @@ class ApiService {
   Future<WebPaResponse> getDeviceParameter(String deviceMac, String parameterName) async {
     final url = Uri.parse("$_baseUrl/api/v2/device/$deviceMac/config?names=$parameterName");
     
-    print("------------------------------------------------------------------");
-    print("API Request: GET $url");
-    print("Headers: {Authorization: $_authHeader}");
-    print("------------------------------------------------------------------");
+    log("------------------------------------------------------------------", name: 'ApiService');
+    log("API Request: GET $url", name: 'ApiService');
+    log("Headers: {Authorization: $_authHeader}", name: 'ApiService');
+    log("------------------------------------------------------------------", name: 'ApiService');
 
     try {
       final response = await _client.get(
@@ -36,10 +37,10 @@ class ApiService {
         },
       );
 
-      print("------------------------------------------------------------------");
-      print("API Response: ${response.statusCode}");
-      print("Response Body: ${response.body}");
-      print("------------------------------------------------------------------");
+      log("------------------------------------------------------------------", name: 'ApiService');
+      log("API Response: ${response.statusCode}", name: 'ApiService');
+      log("Response Body: ${response.body}", name: 'ApiService');
+      log("------------------------------------------------------------------", name: 'ApiService');
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final jsonMap = jsonDecode(response.body);
@@ -48,7 +49,7 @@ class ApiService {
         throw HttpException("Failed to get parameter: ${response.statusCode} ${response.body}");
       }
     } catch (e) {
-      print("API Error: $e");
+      log("API Error: $e", name: 'ApiService');
       rethrow;
     }
   }
@@ -57,11 +58,11 @@ class ApiService {
     final url = Uri.parse("$_baseUrl/api/v2/device/$deviceMac/config");
     final reqBody = jsonEncode(body.toJson());
     
-    print("------------------------------------------------------------------");
-    print("API Request: PATCH $url");
-    print("Headers: {Authorization: $_authHeader, Content-Type: application/json}");
-    print("Request Body: $reqBody");
-    print("------------------------------------------------------------------");
+    log("------------------------------------------------------------------", name: 'ApiService');
+    log("API Request: PATCH $url", name: 'ApiService');
+    log("Headers: {Authorization: $_authHeader, Content-Type: application/json}", name: 'ApiService');
+    log("Request Body: $reqBody", name: 'ApiService');
+    log("------------------------------------------------------------------", name: 'ApiService');
 
     try {
       final response = await _client.patch(
@@ -73,10 +74,10 @@ class ApiService {
         body: reqBody,
       );
       
-      print("------------------------------------------------------------------");
-      print("API Response: ${response.statusCode}");
-      print("Response Body: ${response.body}");
-      print("------------------------------------------------------------------");
+      log("------------------------------------------------------------------", name: 'ApiService');
+      log("API Response: ${response.statusCode}", name: 'ApiService');
+      log("Response Body: ${response.body}", name: 'ApiService');
+      log("------------------------------------------------------------------", name: 'ApiService');
 
       // Original logic handles 520 as success in SmartHomeRepository?
       // We will let the repository handle that specific logic or handle general success here.
@@ -97,7 +98,7 @@ class ApiService {
       return WebPaResponse.fromJson(jsonMap);
       
     } catch (e) {
-      print("API Error: $e");
+      log("API Error: $e", name: 'ApiService');
       rethrow;
     }
   }
@@ -106,11 +107,11 @@ class ApiService {
     final url = Uri.parse("$_baseUrl/api/v2/device/$deviceMac/config");
     final reqBody = jsonEncode(body.toJson());
 
-    print("------------------------------------------------------------------");
-    print("API Request: PATCH $url");
-    print("Headers: {Authorization: $_authHeader, Content-Type: application/json}");
-    print("Request Body: $reqBody");
-    print("------------------------------------------------------------------");
+    log("------------------------------------------------------------------", name: 'ApiService');
+    log("API Request: PATCH $url", name: 'ApiService');
+    log("Headers: {Authorization: $_authHeader, Content-Type: application/json}", name: 'ApiService');
+    log("Request Body: $reqBody", name: 'ApiService');
+    log("------------------------------------------------------------------", name: 'ApiService');
 
     try {
       final response = await _client.patch(
@@ -122,10 +123,10 @@ class ApiService {
         body: reqBody,
       );
 
-      print("------------------------------------------------------------------");
-      print("API Response: ${response.statusCode}");
-      print("Response Body: ${response.body}");
-      print("------------------------------------------------------------------");
+      log("------------------------------------------------------------------", name: 'ApiService');
+      log("API Response: ${response.statusCode}", name: 'ApiService');
+      log("Response Body: ${response.body}", name: 'ApiService');
+      log("------------------------------------------------------------------", name: 'ApiService');
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final jsonMap = jsonDecode(response.body);
@@ -134,7 +135,7 @@ class ApiService {
          throw HttpException("Failed to reboot: ${response.statusCode} ${response.body}");
       }
     } catch (e) {
-      print("API Error: $e");
+      log("API Error: $e", name: 'ApiService');
       rethrow;
     }
   }
@@ -143,15 +144,15 @@ class ApiService {
   /// [macWithColons] should be in format "02:01:00:8E:5E:97".
   Future<XConfFirmwareInfo> getXconfFirmwareInfo(String macWithColons) async {
     final url = Uri.parse("$xconfBaseUrl/xconf/swu/stb?eStbMac=$macWithColons");
-    print("------------------------------------------------------------------");
-    print("XConf Request: GET $url");
-    print("------------------------------------------------------------------");
+    log("------------------------------------------------------------------", name: 'ApiService');
+    log("XConf Request: GET $url", name: 'ApiService');
+    log("------------------------------------------------------------------", name: 'ApiService');
     try {
       final response = await _client.get(url);
-      print("------------------------------------------------------------------");
-      print("XConf Response: ${response.statusCode}");
-      print("Response Body: ${response.body}");
-      print("------------------------------------------------------------------");
+      log("------------------------------------------------------------------", name: 'ApiService');
+      log("XConf Response: ${response.statusCode}", name: 'ApiService');
+      log("Response Body: ${response.body}", name: 'ApiService');
+      log("------------------------------------------------------------------", name: 'ApiService');
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final jsonMap = jsonDecode(response.body) as Map<String, dynamic>;
         return XConfFirmwareInfo.fromJson(jsonMap);
@@ -159,7 +160,7 @@ class ApiService {
         throw HttpException("XConf failed: ${response.statusCode} ${response.body}");
       }
     } catch (e) {
-      print("XConf API Error: $e");
+      log("XConf API Error: $e", name: 'ApiService');
       rethrow;
     }
   }

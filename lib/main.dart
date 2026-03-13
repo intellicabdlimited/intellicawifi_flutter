@@ -12,9 +12,13 @@ import 'screens/connected_devices_screen.dart';
 import 'screens/device_details_screen.dart';
 import 'screens/router_settings_screen.dart';
 import 'screens/smart_home_screen.dart';
+import 'screens/light_control_screen.dart';
+import 'screens/plug_control_screen.dart';
+import 'screens/thermostat_control_screen.dart';
 import 'screens/about_router_screen.dart';
 import 'screens/troubleshooting_screen.dart';
 import 'screens/firmware_upgrade_screen.dart';
+import 'models/models.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,6 +67,24 @@ class MyApp extends StatelessWidget {
           final deviceId = settings.arguments as String;
           return MaterialPageRoute(
             builder: (context) => DeviceDetailsScreen(deviceId: deviceId),
+          );
+        }
+        if (settings.name == '/light_control') {
+          final device = settings.arguments as SmartDevice;
+          return MaterialPageRoute(
+            builder: (context) => LightControlScreen(device: device),
+          );
+        }
+        if (settings.name == '/plug_control') {
+          final device = settings.arguments as SmartDevice;
+          return MaterialPageRoute(
+            builder: (context) => PlugControlScreen(device: device),
+          );
+        }
+        if (settings.name == '/thermostat_control') {
+          final device = settings.arguments as SmartDevice;
+          return MaterialPageRoute(
+            builder: (context) => ThermostatControlScreen(device: device),
           );
         }
         return null;

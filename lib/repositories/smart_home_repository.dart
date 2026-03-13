@@ -110,6 +110,53 @@ class SmartHomeRepository {
     return _sendSetRequest("Device.Barton.temp", value);
   }
 
+  /// Thermostat: send printDevice via Device.Barton.temp1 (set), then get Device.Barton.temp1 to read response.
+  static const String _bartonTemp1 = "Device.Barton.temp1";
+
+  Future<String> getBartonTemp1() async {
+    final deviceMac = await RouterMacManager.getMac();
+    try {
+      final response = await _api.getDeviceParameter(deviceMac, _bartonTemp1);
+      return response.parameters?.firstOrNull?.getStringValue() ?? "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  Future<bool> setBartonTemp1(String command) async {
+    return _sendSetRequest(_bartonTemp1, command);
+  }
+
+  /// Read thermostat state: set printDevice nodeId, wait briefly, then get and parse.
+  Future<ThermostatState?> getThermostatState(String nodeId) async {
+    try {
+      final ok = await setBartonTemp1("printDevice $nodeId");
+      if (!ok) return null;
+      await Future.delayed(const Duration(milliseconds: 800));
+      final raw = await getBartonTemp1();
+      return ThermostatState.parsePrintDeviceResponse(raw, nodeId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Write heat setpoint (Celsius, 7–30).
+  Future<bool> setThermostatHeatSetpoint(String nodeId, double valueC) async {
+    final v = valueC.toStringAsFixed(2);
+    return setBartonTemp1("writeResource /$nodeId/ep/1/r/heatSetpoint $v");
+  }
+
+  /// Write cool setpoint (Celsius, 16–32).
+  Future<bool> setThermostatCoolSetpoint(String nodeId, double valueC) async {
+    final v = valueC.toStringAsFixed(2);
+    return setBartonTemp1("writeResource /$nodeId/ep/1/r/coolSetpoint $v");
+  }
+
+  /// Write system mode: auto, heat, cool, off, emergencyHeat, fanOnly.
+  Future<bool> setThermostatSystemMode(String nodeId, String mode) async {
+    return setBartonTemp1("writeResource /$nodeId/ep/1/r/systemMode $mode");
+  }
+
   Future<String> getDeviceLightClass() async {
     final deviceMac = await RouterMacManager.getMac();
     try {
