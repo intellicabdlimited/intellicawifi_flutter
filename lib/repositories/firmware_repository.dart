@@ -2,9 +2,22 @@ import '../api/api_service.dart';
 import '../models/models.dart';
 import '../utils/router_mac_manager.dart';
 import '../utils/mac_format.dart';
+import '../utils/fw_upgrade_status_parser.dart';
+
+class FirmwareStatusResult {
+  final String rawResponse;
+  final FirmwareUpgradeStatus parsedStatus;
+
+  const FirmwareStatusResult({
+    required this.rawResponse,
+    required this.parsedStatus,
+  });
+}
 
 class FirmwareRepository {
   final ApiService _api = ApiService();
+  static const String _statusParamName = "Device.Bananapi.temp4";
+  static const String _statusCommand = "systemctl status RdkFwUpgradeManager";
 
   Future<XConfFirmwareInfo> getXconfFirmwareInfo() async {
     final rawMac = await RouterMacManager.getMac();
@@ -22,6 +35,15 @@ class FirmwareRepository {
     required String location,
     required String filename,
   }) async {
+    final statusCheck = await fetchFirmwareUpgradeStatus();
+    final s = statusCheck.parsedStatus.state;
+    if (s != FirmwareUpgradeState.idle && s != FirmwareUpgradeState.failed) {
+      throw Exception(
+        "Firmware upgrade cannot be started because current service status is "
+        "${s.name}. ${statusCheck.parsedStatus.userMessage}",
+      );
+    }
+
     final deviceMac = await RouterMacManager.getMac();
     if (deviceMac.isEmpty || deviceMac == "mac:") {
       throw Exception("No MAC address configured");
@@ -121,5 +143,44 @@ class FirmwareRepository {
     }
 
     return steps;
+  }
+
+  /// Executes WebPA status command and then reads output after 1 second.
+  Future<FirmwareStatusResult> fetchFirmwareUpgradeStatus() async {
+    final deviceMac = await RouterMacManager.getMac();
+    if (deviceMac.isEmpty || deviceMac == "mac:") {
+      throw Exception("No MAC address configured");
+    }
+
+    await _api.setDeviceParameter(
+      deviceMac,
+      SetParameterRequest(
+        parameters: [
+          SetParameter(
+            name: _statusParamName,
+            value: _statusCommand,
+            dataType: 0,
+          ),
+        ],
+      ),
+    );
+
+    await Future<void>.delayed(const Duration(seconds: 1));
+
+    final response = await _api.getDeviceParameter(deviceMac, _statusParamName);
+    final raw = _extractRawStatusText(response);
+    final parsed = FirmwareUpgradeStatusParser.parse(raw);
+    return FirmwareStatusResult(rawResponse: raw, parsedStatus: parsed);
+  }
+
+  String _extractRawStatusText(WebPaResponse response) {
+    if (response.parameters == null || response.parameters!.isEmpty) {
+      return '';
+    }
+    final value = response.parameters!.first.value;
+    if (value is String) {
+      return value;
+    }
+    return value?.toString() ?? '';
   }
 }
