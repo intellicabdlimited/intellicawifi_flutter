@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'troubleshoot_result_screen.dart';
+import '../services/post_upgrade_coordinator.dart';
 import '../viewmodels/router_viewmodel.dart';
 import '../utils/ui_state.dart';
 
@@ -11,6 +13,9 @@ class OverviewScreen extends StatefulWidget {
 }
 
 class _OverviewScreenState extends State<OverviewScreen> {
+  bool _postUpgradeDialogShown = false;
+  bool _postUpgradeFailureShown = false;
+
   @override
   void initState() {
     super.initState();
@@ -36,13 +41,16 @@ class _OverviewScreenState extends State<OverviewScreen> {
           )
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Consumer<RouterViewModel>(
-              builder: (context, viewModel, child) {
+      body: Consumer<RouterViewModel>(
+        builder: (context, viewModel, _) {
+          _maybeShowPostUpgradePrompt(viewModel);
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Builder(
+                  builder: (context) {
                 final infoState = viewModel.routerInfo;
                 
                 if (infoState.status == UiStatus.loading) {
@@ -150,10 +158,12 @@ class _OverviewScreenState extends State<OverviewScreen> {
                     ),
                   ],
                 );
-              },
+                  },
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -208,5 +218,69 @@ class _OverviewScreenState extends State<OverviewScreen> {
         ],
       ),
     );
+  }
+
+  void _maybeShowPostUpgradePrompt(RouterViewModel viewModel) {
+    final result = viewModel.lastPostUpgradeRunResult;
+    if (result == null) return;
+
+    final status = result.status;
+    if (status == PostUpgradeRunStatus.skippedUpgradeFailed &&
+        !_postUpgradeFailureShown) {
+      _postUpgradeFailureShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Previous firmware upgrade failed. Post-upgrade sanity check was skipped.',
+            ),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        viewModel.clearPostUpgradeRunResult();
+      });
+      return;
+    }
+    if (status != PostUpgradeRunStatus.promptReady || _postUpgradeDialogShown) return;
+
+    _postUpgradeDialogShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Firmware upgraded successfully'),
+          content: const Text('Do you want to run post-upgrade sanity test?'),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                await viewModel.clearPostUpgradePendingState();
+              },
+              child: const Text('No'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                await viewModel.clearPostUpgradePendingState();
+                if (!mounted) return;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (context) => const TroubleshootResultScreen(
+                      title: 'Sanity test',
+                      parameterName: kSanityTestParameterName,
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Yes'),
+            ),
+          ],
+        ),
+      );
+    });
   }
 }

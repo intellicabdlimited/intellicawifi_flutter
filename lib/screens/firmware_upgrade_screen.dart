@@ -7,6 +7,8 @@ import '../repositories/firmware_repository.dart';
 import '../viewmodels/router_viewmodel.dart';
 import '../utils/ui_state.dart';
 import '../utils/fw_upgrade_status_parser.dart';
+import '../utils/post_upgrade_state_manager.dart';
+import '../utils/router_mac_manager.dart';
 
 class FirmwareUpgradeScreen extends StatefulWidget {
   const FirmwareUpgradeScreen({super.key});
@@ -219,7 +221,10 @@ class _FirmwareUpgradeScreenState extends State<FirmwareUpgradeScreen> {
   Future<void> _showUpgradeProgressDialog(BuildContext context) async {
     await showDialog<void>(
       context: context,
-      builder: (ctx) => _UpgradeProgressDialog(repository: _firmwareRepo),
+      builder: (ctx) => _UpgradeProgressDialog(
+        repository: _firmwareRepo,
+        targetVersion: _xconfState.data?.displayFilename ?? '',
+      ),
     );
   }
 
@@ -446,6 +451,19 @@ class _FirmwareUpgradeScreenState extends State<FirmwareUpgradeScreen> {
       if (!allOk) {
         throw Exception("One or more firmware trigger steps failed.");
       }
+      // Persist post-upgrade pending state immediately after trigger succeeds,
+      // so app exit without opening/keeping progress dialog is still covered.
+      try {
+        final mac = await RouterMacManager.getMac();
+        if (mac.isNotEmpty && mac != 'mac:') {
+          await PostUpgradeStateManager().markUpgradeTriggered(
+            mac: mac,
+            targetVersion: info.displayFilename,
+          );
+        }
+      } catch (_) {
+        // Non-fatal; progress dialog polling has additional marker persistence.
+      }
       _showUpgradeProgressDialog(context);
     } catch (e) {
       if (context.mounted) {
@@ -463,8 +481,12 @@ class _FirmwareUpgradeScreenState extends State<FirmwareUpgradeScreen> {
 
 class _UpgradeProgressDialog extends StatefulWidget {
   final FirmwareRepository repository;
+  final String targetVersion;
 
-  const _UpgradeProgressDialog({required this.repository});
+  const _UpgradeProgressDialog({
+    required this.repository,
+    required this.targetVersion,
+  });
 
   @override
   State<_UpgradeProgressDialog> createState() => _UpgradeProgressDialogState();
@@ -475,6 +497,8 @@ class _UpgradeProgressDialogState extends State<_UpgradeProgressDialog> {
   bool _loading = true;
   String? _error;
   Timer? _timer;
+  FirmwareUpgradeState? _lastObservedState;
+  final PostUpgradeStateManager _postUpgradeStateManager = PostUpgradeStateManager();
 
   @override
   void initState() {
@@ -498,6 +522,7 @@ class _UpgradeProgressDialogState extends State<_UpgradeProgressDialog> {
     }
     try {
       final result = await widget.repository.fetchFirmwareUpgradeStatus();
+      await _handlePostUpgradeMarkerIfNeeded(result.parsedStatus);
       if (!mounted) return;
       setState(() {
         _result = result;
@@ -510,6 +535,41 @@ class _UpgradeProgressDialogState extends State<_UpgradeProgressDialog> {
         _error = e.toString();
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _handlePostUpgradeMarkerIfNeeded(FirmwareUpgradeStatus status) async {
+    final state = status.state;
+    final last = _lastObservedState;
+    _lastObservedState = state;
+
+    final isLateUpgradePhase = state == FirmwareUpgradeState.readyToReboot ||
+        state == FirmwareUpgradeState.downloaded ||
+        status.rebootPhaseEntered ||
+        status.downloadSuccessful;
+    if (!isLateUpgradePhase || last == FirmwareUpgradeState.readyToReboot) {
+      return;
+    }
+
+    try {
+      final mac = await RouterMacManager.getMac();
+      if (mac.isEmpty || mac == 'mac:') return;
+      final targetVersion = widget.targetVersion.trim();
+      if (targetVersion.isEmpty) return;
+      await _postUpgradeStateManager.markReadyToReboot(
+        mac: mac,
+        targetVersion: targetVersion,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Upgrade marked for post-reboot sanity verification.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (_) {
+      // Do not interrupt status polling if marker persistence fails.
     }
   }
 

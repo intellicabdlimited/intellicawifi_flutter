@@ -1,10 +1,14 @@
 import 'package:flutter/foundation.dart';
 import '../models/models.dart';
 import '../repositories/router_repository.dart';
+import '../services/post_upgrade_coordinator.dart';
+import '../utils/post_upgrade_state_manager.dart';
 import '../utils/ui_state.dart';
 
 class RouterViewModel extends ChangeNotifier {
   final RouterRepository _repository = RouterRepository();
+  final PostUpgradeCoordinator _postUpgradeCoordinator = PostUpgradeCoordinator();
+  final PostUpgradeStateManager _postUpgradeStateManager = PostUpgradeStateManager();
 
   UiState<RouterInfo> _routerInfo = UiState.loading();
   UiState<RouterInfo> get routerInfo => _routerInfo;
@@ -23,8 +27,10 @@ class RouterViewModel extends ChangeNotifier {
 
   String? _routerMac;
   String? get routerMac => _routerMac;
+  PostUpgradeRunResult? _lastPostUpgradeRunResult;
+  PostUpgradeRunResult? get lastPostUpgradeRunResult => _lastPostUpgradeRunResult;
 
-  void loadRouterInfo() async {
+  Future<void> loadRouterInfo() async {
     _routerInfo = UiState.loading();
     try {
        _routerMac = await _repository.getCurrentMacAddress(); 
@@ -37,9 +43,35 @@ class RouterViewModel extends ChangeNotifier {
       if (info.deviceMac.isNotEmpty) {
         _routerMac = info.deviceMac;
       }
+      final mac = _routerMac ?? info.deviceMac;
+      if (mac.isNotEmpty && mac != 'mac:') {
+        final runResult = await _postUpgradeCoordinator.checkEligibility(
+          mac: mac,
+          currentVersion: info.softwareVersion,
+        );
+        _lastPostUpgradeRunResult = runResult;
+        if (runResult.status == PostUpgradeRunStatus.promptReady ||
+            runResult.status == PostUpgradeRunStatus.failed ||
+            runResult.status == PostUpgradeRunStatus.alreadyRan) {
+          debugPrint('[PostUpgradeCoordinator] ${runResult.message}');
+        }
+      }
     } catch (e) {
       _routerInfo = UiState.error(e.toString());
     }
+    notifyListeners();
+  }
+
+  void clearPostUpgradeRunResult() {
+    _lastPostUpgradeRunResult = null;
+    notifyListeners();
+  }
+
+  Future<void> clearPostUpgradePendingState() async {
+    final mac = _routerMac ?? await _repository.getCurrentMacAddress();
+    if (mac.isEmpty || mac == 'mac:') return;
+    await _postUpgradeStateManager.clearPending(mac);
+    _lastPostUpgradeRunResult = null;
     notifyListeners();
   }
 
