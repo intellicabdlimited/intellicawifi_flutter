@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'repositories/router_repository.dart';
-import 'repositories/smart_home_repository.dart';
 import 'utils/router_mac_manager.dart';
 import 'viewmodels/router_viewmodel.dart';
 import 'viewmodels/smart_home_viewmodel.dart';
@@ -15,6 +13,7 @@ import 'screens/smart_home_screen.dart';
 import 'screens/light_control_screen.dart';
 import 'screens/plug_control_screen.dart';
 import 'screens/thermostat_control_screen.dart';
+import 'screens/contact_sensor_control_screen.dart';
 import 'screens/about_router_screen.dart';
 import 'screens/troubleshooting_screen.dart';
 import 'screens/firmware_upgrade_screen.dart';
@@ -85,6 +84,12 @@ class MyApp extends StatelessWidget {
           final device = settings.arguments as SmartDevice;
           return MaterialPageRoute(
             builder: (context) => ThermostatControlScreen(device: device),
+          );
+        }
+        if (settings.name == '/contact_sensor_control') {
+          final device = settings.arguments as SmartDevice;
+          return MaterialPageRoute(
+            builder: (context) => ContactSensorControlScreen(device: device),
           );
         }
         return null;

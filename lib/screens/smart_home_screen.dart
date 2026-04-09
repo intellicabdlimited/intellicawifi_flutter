@@ -242,6 +242,8 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
       Navigator.pushNamed(context, '/light_control', arguments: device);
     } else if (device.deviceClass == "plug") {
       Navigator.pushNamed(context, '/plug_control', arguments: device);
+    } else if (device.deviceClass == "sensor") {
+      Navigator.pushNamed(context, '/contact_sensor_control', arguments: device);
     } else {
       Navigator.pushNamed(context, '/light_control', arguments: device);
     }
@@ -250,6 +252,7 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
   Widget _buildDeviceCard(SmartDevice device, SmartHomeViewModel vm) {
     final isLight = device.deviceClass == "light";
     final isThermostat = device.deviceClass == "thermostat";
+    final isSensor = device.deviceClass == "sensor";
     IconData icon;
     Color iconColor;
     if (isThermostat) {
@@ -258,6 +261,9 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
     } else if (isLight) {
       icon = Icons.lightbulb;
       iconColor = Colors.orange;
+    } else if (isSensor) {
+      icon = Icons.sensors;
+      iconColor = Colors.teal;
     } else {
       icon = Icons.power;
       iconColor = Colors.blue;
@@ -279,10 +285,12 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
                   children: [
                     Text(device.label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     Text("Class: ${device.deviceClass}", style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                    if (isSensor)
+                      Text("State: ${device.isOn ? "Open" : "Closed"}", style: const TextStyle(color: Colors.grey, fontSize: 13)),
                   ],
                 ),
               ),
-              if (!isThermostat)
+              if (!isThermostat && !isSensor)
                 Switch(
                   value: device.isOn,
                   onChanged: (val) => vm.toggleDevice(device.nodeId, device.isOn),

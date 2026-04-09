@@ -1,16 +1,23 @@
 import 'package:flutter/foundation.dart';
 import '../models/models.dart';
+import '../repositories/router_repository.dart';
 import '../repositories/smart_home_repository.dart';
+import '../services/barton_mqtt_service.dart';
 import '../utils/ui_state.dart';
 
 class SmartHomeViewModel extends ChangeNotifier {
   final SmartHomeRepository _repository = SmartHomeRepository();
+  final RouterRepository _routerRepository = RouterRepository();
+  BartonMqttService? _mqtt;
 
   UiState<List<SmartDevice>> _devices = UiState.loading();
   UiState<List<SmartDevice>> get devices => _devices;
 
   UiState<String>? _operationResult;
   UiState<String>? get operationResult => _operationResult;
+
+  MqttConnectionStatus _mqttStatus = MqttConnectionStatus.disconnected;
+  MqttConnectionStatus get mqttStatus => _mqttStatus;
 
   bool _isOperationLoading = false;
   bool get isOperationLoading => _isOperationLoading;
@@ -20,6 +27,80 @@ class SmartHomeViewModel extends ChangeNotifier {
   String get ssid => _ssid ?? "";
   String get password => _password ?? "";
   bool get isWifiConfigured => _ssid != null && _ssid!.isNotEmpty;
+
+  SmartHomeViewModel() {
+    _initMqtt();
+  }
+
+  Future<String?> _resolveMqttHost() async {
+    try {
+      final info = await _routerRepository.getRouterInfo();
+      final ip = info.wanIpAddress.trim();
+      if (ip.isEmpty || ip.toLowerCase() == 'n/a') return null;
+      return ip;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _initMqtt() {
+    // Fire-and-forget init loop until we have a host.
+    () async {
+      while (true) {
+        final host = await _resolveMqttHost();
+        if (host != null) {
+          final mqtt = BartonMqttService(host: host, port: 1883);
+          _mqtt = mqtt;
+
+          mqtt.statusStream.listen((s) {
+            _mqttStatus = s;
+            notifyListeners();
+          });
+
+          mqtt.updates.listen((u) async {
+            final v = u.boolValue;
+            if (v == null) return;
+
+            // For now, treat boolean updates as the live state for sensors.
+            if (_devices.status != UiStatus.success) return;
+            final currentList = _devices.data!;
+
+            bool updatedAny = false;
+            final updatedList = <SmartDevice>[];
+            for (final d in currentList) {
+              if (d.nodeId == u.deviceUuid && d.deviceClass == 'sensor') {
+                final updated = d.copyWith(isOn: v);
+                updatedList.add(updated);
+                updatedAny = true;
+                await _repository.saveDeviceConfig(updated);
+              } else {
+                updatedList.add(d);
+              }
+            }
+
+            if (updatedAny) {
+              _devices = UiState.success(updatedList);
+              notifyListeners();
+            }
+          });
+
+          try {
+            final clientId = 'intellica_flutter_${DateTime.now().millisecondsSinceEpoch}';
+            await mqtt.connectAndSubscribe(clientId: clientId);
+          } catch (_) {
+            // statusStream will report error/disconnected.
+          }
+          break;
+        }
+
+        _mqttStatus = MqttConnectionStatus.connecting;
+        notifyListeners();
+        await Future.delayed(const Duration(seconds: 3));
+      }
+    }();
+
+    // Note: message handling is attached once _mqtt is created.
+  }
 
   void loadDevices() async {
     _devices = UiState.loading();
@@ -388,5 +469,11 @@ class SmartHomeViewModel extends ChangeNotifier {
   void clearOperationResult() {
     _operationResult = null;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _mqtt?.dispose();
+    super.dispose();
   }
 }
