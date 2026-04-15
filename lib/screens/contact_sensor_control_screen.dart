@@ -27,6 +27,10 @@ class ContactSensorControlScreen extends StatelessWidget {
               vm.loadDevices();
             },
           ),
+          IconButton(
+            icon: const Icon(Icons.delete, color: Colors.red),
+            onPressed: () => _confirmRemove(context),
+          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -82,6 +86,29 @@ class ContactSensorControlScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _confirmRemove(BuildContext context) {
+    final vm = context.read<SmartHomeViewModel>();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove device'),
+        content: const Text('Remove this device from your smart home?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              vm.removeDevice(device.nodeId);
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+            },
+            child: const Text('Remove'),
+          ),
+        ],
       ),
     );
   }
