@@ -112,7 +112,7 @@ class SmartDevice {
   final String nodeId;
   final bool isOn;
   final String label;
-  /// Device class from API: "light" or "plug"
+  /// Device class from API: e.g. "light", "plug", "thermostat", "doorlock".
   final String deviceClass;
   final int hue;
   final int brightness;

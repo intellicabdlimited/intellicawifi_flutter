@@ -238,6 +238,8 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
   void _openDeviceControl(SmartDevice device) {
     if (device.deviceClass == "thermostat") {
       Navigator.pushNamed(context, '/thermostat_control', arguments: device);
+    } else if (device.deviceClass == "doorlock") {
+      Navigator.pushNamed(context, '/door_lock_control', arguments: device);
     } else if (device.deviceClass == "light") {
       Navigator.pushNamed(context, '/light_control', arguments: device);
     } else if (device.deviceClass == "plug") {
@@ -250,11 +252,15 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
   Widget _buildDeviceCard(SmartDevice device, SmartHomeViewModel vm) {
     final isLight = device.deviceClass == "light";
     final isThermostat = device.deviceClass == "thermostat";
+    final isDoorLock = device.deviceClass == "doorlock";
     IconData icon;
     Color iconColor;
     if (isThermostat) {
       icon = Icons.thermostat;
       iconColor = Colors.blue.shade700;
+    } else if (isDoorLock) {
+      icon = Icons.door_front_door_outlined;
+      iconColor = Theme.of(context).colorScheme.primary;
     } else if (isLight) {
       icon = Icons.lightbulb;
       iconColor = Colors.orange;
@@ -282,7 +288,7 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
                   ],
                 ),
               ),
-              if (!isThermostat)
+              if (!isThermostat && !isDoorLock)
                 Switch(
                   value: device.isOn,
                   onChanged: (val) => vm.toggleDevice(device.nodeId, device.isOn),

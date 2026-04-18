@@ -157,6 +157,40 @@ class SmartHomeRepository {
     return setBartonTemp1("writeResource /$nodeId/ep/1/r/systemMode $mode");
   }
 
+  /// Matter door lock: write label via Device.Barton.temp1 (writeResource).
+  Future<bool> setDoorLockLabel(String nodeId, String label) async {
+    //final escaped = label.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+    return setBartonTemp1("writeResource /$nodeId/ep/1/r/label '$label'");
+  }
+
+  /// Lock or unlock the door (`locked` resource).
+  Future<bool> setDoorLocked(String nodeId, bool locked) async {
+    return setBartonTemp1(
+      "writeResource /$nodeId/ep/1/r/locked ${locked ? 'true' : 'false'}",
+    );
+  }
+
+  /// Read lock state: PATCH readResource, then GET Device.Barton.temp1 and parse true/false.
+  Future<bool?> getDoorLockLocked(String nodeId) async {
+    try {
+      final ok = await setBartonTemp1("readResource /$nodeId/ep/1/r/locked");
+      if (!ok) return null;
+      await Future.delayed(const Duration(milliseconds: 800));
+      final raw = await getBartonTemp1();
+      return _parseBoolFromBartonTemp1(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  bool? _parseBoolFromBartonTemp1(String raw) {
+    final match = RegExp(r'\b(true|false)\b', caseSensitive: false).firstMatch(raw);
+    if (match != null) {
+      return match.group(0)!.toLowerCase() == 'true';
+    }
+    return null;
+  }
+
   Future<String> getDeviceLightClass() async {
     final deviceMac = await RouterMacManager.getMac();
     try {
