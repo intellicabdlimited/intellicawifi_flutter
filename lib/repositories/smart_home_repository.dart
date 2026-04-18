@@ -46,6 +46,11 @@ class SmartHomeRepository {
     return _sendSetRequest("Device.Light.Remove", value);
   }
 
+  /// Matter air sensor (and similar): remove via Barton shell on `Device.Barton.temp1`.
+  Future<bool> removeDeviceViaBartonRemoveCommand(String nodeId) async {
+    return setBartonTemp1("removeDevice $nodeId");
+  }
+
   Future<bool> setDeviceColor(String hueValue) async {
     return _sendSetRequest("Device.Light.Color", hueValue);
   }
@@ -138,6 +143,24 @@ class SmartHomeRepository {
     } catch (e) {
       return null;
     }
+  }
+
+  /// Matter air quality sensor: `printDevice` then GET `Device.Barton.temp1`, parse endpoint 1 only.
+  Future<AirSensorState?> getAirSensorState(String nodeId) async {
+    try {
+      final ok = await setBartonTemp1("printDevice $nodeId");
+      if (!ok) return null;
+      await Future.delayed(const Duration(milliseconds: 800));
+      final raw = await getBartonTemp1();
+      return AirSensorState.parsePrintDeviceResponse(raw, nodeId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Air sensor label: `writeResource` on endpoint 1 (same as door lock).
+  Future<bool> setAirSensorLabel(String nodeId, String label) async {
+    return setBartonTemp1("writeResource /$nodeId/ep/1/r/label '$label'");
   }
 
   /// Write heat setpoint (Celsius, 7–30).

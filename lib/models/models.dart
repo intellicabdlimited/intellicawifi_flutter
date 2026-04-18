@@ -112,7 +112,7 @@ class SmartDevice {
   final String nodeId;
   final bool isOn;
   final String label;
-  /// Device class from API: e.g. "light", "plug", "thermostat", "doorlock".
+  /// Device class from API: e.g. "light", "plug", "thermostat", "doorlock", "sensor".
   final String deviceClass;
   final int hue;
   final int brightness;
@@ -285,6 +285,79 @@ class ThermostatState {
       localTemperature: localTemperature ?? 0.0,
       systemMode: systemMode ?? 'off',
     );
+  }
+}
+
+/// Matter air quality sensor: parsed from `printDevice` WebPA response.
+/// Only lines under endpoint 1 (`/ep/1/r/...`) are collected — not device-level `/r/` fields.
+class AirSensorState {
+  final String label;
+  /// e.g. `airQuality` from `/ep/1/r/type`.
+  final String? endpointType;
+  /// Overall air quality enum/text from Matter (`matterAirQuality`).
+  final String? matterAirQuality;
+  /// Keys are resource names under `ep/1/r` (e.g. `matterPm25ConcentrationMeasured`).
+  final Map<String, String> readings;
+
+  AirSensorState({
+    this.label = 'Air sensor',
+    this.endpointType,
+    this.matterAirQuality,
+    Map<String, String>? readings,
+  }) : readings = readings ?? {};
+
+  AirSensorState copyWith({
+    String? label,
+    String? endpointType,
+    String? matterAirQuality,
+    Map<String, String>? readings,
+  }) {
+    return AirSensorState(
+      label: label ?? this.label,
+      endpointType: endpointType ?? this.endpointType,
+      matterAirQuality: matterAirQuality ?? this.matterAirQuality,
+      readings: readings ?? Map<String, String>.from(this.readings),
+    );
+  }
+
+  /// Parse `printDevice` output: keep only `/ep/1/r/<name> = <value>` lines.
+  static AirSensorState? parsePrintDeviceResponse(String raw, [String? nodeId]) {
+    if (raw.isEmpty) return null;
+    final readings = <String, String>{};
+    String? label;
+    String? endpointType;
+    String? matterAirQuality;
+
+    final ep1 = RegExp(r'/ep/1/r/(\w+)\s*=\s*(.*)$');
+    for (var line in raw.split('\n')) {
+      final trimmed = line.trim();
+      if (!trimmed.contains('/ep/1/r/')) continue;
+      final m = ep1.firstMatch(trimmed);
+      if (m == null) continue;
+      final key = m.group(1)!;
+      var val = m.group(2)!.trim();
+      if (val.endsWith(',')) {
+        val = val.substring(0, val.length - 1).trim();
+      }
+      readings[key] = val;
+      if (key == 'label') label = val;
+      if (key == 'type') endpointType = val;
+      if (key == 'matterAirQuality') matterAirQuality = val;
+    }
+
+    if (readings.isEmpty) return null;
+
+    return AirSensorState(
+      label: label ?? 'Air sensor',
+      endpointType: endpointType,
+      matterAirQuality: matterAirQuality,
+      readings: readings,
+    );
+  }
+
+  /// Sorted keys for stable UI lists.
+  List<String> sortedReadingKeys() {
+    return readings.keys.toList()..sort();
   }
 }
 

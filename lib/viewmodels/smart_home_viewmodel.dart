@@ -160,6 +160,36 @@ class SmartHomeViewModel extends ChangeNotifier {
     _isOperationLoading = false;
     notifyListeners();
   }
+
+  /// Matter air sensor: remove with Barton `removeDevice <nodeId>` on `Device.Barton.temp1` (not `Device.Light.Remove`).
+  Future<void> removeAirSensorDevice(String nodeId) async {
+    _isOperationLoading = true;
+    notifyListeners();
+
+    if (!isWifiConfigured) {
+      _operationResult = UiState.error("WiFi not configured. Cannot remove device.");
+      _isOperationLoading = false;
+      notifyListeners();
+      return;
+    }
+
+    try {
+      final success = await _repository.removeDeviceViaBartonRemoveCommand(nodeId);
+      if (success) {
+        await _repository.removeDeviceConfig(nodeId);
+        _operationResult = UiState.success("Device removed successfully");
+        await Future.delayed(const Duration(seconds: 5));
+        loadDevices();
+      } else {
+        _operationResult = UiState.error("Failed to remove device");
+      }
+    } catch (e) {
+      _operationResult = UiState.error(e.toString());
+    }
+
+    _isOperationLoading = false;
+    notifyListeners();
+  }
   
   Future<void> commissionDevice(String pairingCode) async {
     _isOperationLoading = true;

@@ -240,6 +240,8 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
       Navigator.pushNamed(context, '/thermostat_control', arguments: device);
     } else if (device.deviceClass == "doorlock") {
       Navigator.pushNamed(context, '/door_lock_control', arguments: device);
+    } else if (device.deviceClass == "sensor") {
+      Navigator.pushNamed(context, '/air_sensor_control', arguments: device);
     } else if (device.deviceClass == "light") {
       Navigator.pushNamed(context, '/light_control', arguments: device);
     } else if (device.deviceClass == "plug") {
@@ -253,6 +255,7 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
     final isLight = device.deviceClass == "light";
     final isThermostat = device.deviceClass == "thermostat";
     final isDoorLock = device.deviceClass == "doorlock";
+    final isAirSensor = device.deviceClass == "sensor";
     IconData icon;
     Color iconColor;
     if (isThermostat) {
@@ -261,6 +264,9 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
     } else if (isDoorLock) {
       icon = Icons.door_front_door_outlined;
       iconColor = Theme.of(context).colorScheme.primary;
+    } else if (isAirSensor) {
+      icon = Icons.air;
+      iconColor = Colors.teal.shade700;
     } else if (isLight) {
       icon = Icons.lightbulb;
       iconColor = Colors.orange;
@@ -288,7 +294,7 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
                   ],
                 ),
               ),
-              if (!isThermostat && !isDoorLock)
+              if (!isThermostat && !isDoorLock && !isAirSensor)
                 Switch(
                   value: device.isOn,
                   onChanged: (val) => vm.toggleDevice(device.nodeId, device.isOn),
