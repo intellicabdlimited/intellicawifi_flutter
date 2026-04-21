@@ -259,7 +259,9 @@ class SmartHomeRepository {
       final devices = <SmartDevice>[];
       String? currentId;
 
-      final idAndClassRegex = RegExp(r'^\s*([0-9a-fA-F]+):\s*Class:\s*(\w+)');
+      final idClassDriverRegex = RegExp(
+        r'^\s*([0-9a-fA-F]+):\s*Class:\s*(\w+)(?:\s*,\s*Driver:\s*([^\s,]+))?',
+      );
       final labelRegex = RegExp(r'Label:\s*(.*)');
 
       for (var line in lines) {
@@ -267,15 +269,17 @@ class SmartHomeRepository {
         if (trimmed.isEmpty) continue;
         if (trimmed.startsWith("barton-core>")) continue;
 
-        final idClassMatch = idAndClassRegex.firstMatch(line);
+        final idClassMatch = idClassDriverRegex.firstMatch(line);
         if (idClassMatch != null) {
           currentId = idClassMatch.group(1);
           final deviceClass = (idClassMatch.group(2) ?? "light").toLowerCase();
+          final driver = (idClassMatch.group(3) ?? "").trim();
           if (currentId != null) {
             devices.add(SmartDevice(
               nodeId: currentId,
               label: "Unknown Device",
               deviceClass: deviceClass,
+              driver: driver,
             ));
           }
         } else if (currentId != null && line.contains("Label:")) {

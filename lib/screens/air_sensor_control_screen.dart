@@ -1,7 +1,13 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../utils/ui_state.dart';
+import '../services/air_sensor_background_scheduler.dart';
+import '../services/air_sensor_notification_service.dart';
+import '../services/air_sensor_threshold_evaluator.dart';
 import '../viewmodels/air_sensor_viewmodel.dart';
 import '../viewmodels/smart_home_viewmodel.dart';
 
@@ -29,12 +35,54 @@ class _AirSensorControlBody extends StatefulWidget {
 }
 
 class _AirSensorControlBodyState extends State<_AirSensorControlBody> {
+  bool _alertsPrefLoaded = false;
+  bool _alertsEnabled = true;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AirSensorViewModel>().load();
     });
+    _loadAlertsPref();
+  }
+
+  Future<void> _loadAlertsPref() async {
+    final v = await AirSensorNotificationService.instance.alertsEnabled();
+    if (!mounted) return;
+    setState(() {
+      _alertsEnabled = v;
+      _alertsPrefLoaded = true;
+    });
+  }
+
+  Widget _buildAlertsCard(BuildContext context) {
+    return Card(
+      child: SwitchListTile(
+        title: const Text('Threshold alerts'),
+        subtitle: Text(
+          Platform.isAndroid
+              ? 'Local notification when measured is outside min–max. Android checks in the background every 2 minutes.'
+              : 'Local notification when measured is outside min–max. Background polling is only on Android.',
+        ),
+        value: _alertsEnabled,
+        onChanged: !_alertsPrefLoaded
+            ? null
+            : (value) async {
+                await AirSensorNotificationService.instance.setAlertsEnabled(value);
+                if (value) {
+                  await AirSensorNotificationService.instance.requestPostPermissions();
+                  if (Platform.isAndroid) {
+                    await Permission.scheduleExactAlarm.request();
+                  }
+                  await AirSensorBackgroundScheduler.registerPeriodic();
+                } else {
+                  await AirSensorBackgroundScheduler.cancel();
+                }
+                if (mounted) setState(() => _alertsEnabled = value);
+              },
+      ),
+    );
   }
 
   String _prettyKey(String key) {
@@ -49,6 +97,338 @@ class _AirSensorControlBodyState extends State<_AirSensorControlBody> {
     return b.toString();
   }
 
+  /// `matterXxxConcentration` + Max / Measured / Min
+  static final RegExp _concentrationKey =
+      RegExp(r'^(matter\w+Concentration)(Max|Measured|Min)$');
+
+  static const Map<String, String> _concentrationCardTitle = {
+    'matterCo2Concentration': 'CO₂',
+    'matterCoConcentration': 'CO',
+    'matterFormaldehydeConcentration': 'Formaldehyde',
+    'matterNo2Concentration': 'NO₂',
+    'matterO3Concentration': 'O₃',
+    'matterPm10Concentration': 'PM10',
+    'matterPm1Concentration': 'PM1',
+    'matterPm25Concentration': 'PM2.5',
+    'matterRadonConcentration': 'Radon',
+    'matterTvocConcentration': 'TVOC',
+  };
+
+  String _concentrationTitle(String base) {
+    return _concentrationCardTitle[base] ??
+        _prettyKey(base.replaceFirst('matter', '').replaceAll('Concentration', '').trim());
+  }
+
+  Widget _readingRow(BuildContext context, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 5,
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+              ),
+            ),
+            Expanded(
+              flex: 4,
+              child: Text(
+                value,
+                textAlign: TextAlign.end,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _groupCard(
+    BuildContext context, {
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _miniRow(BuildContext context, String left, String right) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 4,
+            child: Text(left, style: TextStyle(fontSize: 13, color: Colors.grey.shade800)),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              right,
+              textAlign: TextAlign.end,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fmtDisplay(double v) {
+    if (v == v.roundToDouble()) return v.round().toString();
+    return v.toStringAsFixed(2);
+  }
+
+  Widget _limitAdjustRow(
+    BuildContext context,
+    AirSensorViewModel vm,
+    String metricId,
+    bool isMax,
+    String label,
+    String fallbackRaw,
+  ) {
+    final pair = vm.limits[metricId];
+    final fallback = AirSensorThresholdEvaluator.parseNumeric(fallbackRaw);
+    final value = isMax ? (pair?.max ?? fallback) : (pair?.min ?? fallback);
+    final step = vm.stepForMetric(metricId);
+    if (value == null) {
+      return _miniRow(context, label, fallbackRaw);
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(label, style: TextStyle(fontSize: 13, color: Colors.grey.shade800)),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.remove_circle_outline, size: 22),
+            onPressed: () => vm.adjustLimit(metricId, isMax, -step),
+          ),
+          SizedBox(
+            width: 64,
+            child: Text(
+              _fmtDisplay(value),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.add_circle_outline, size: 22),
+            onPressed: () => vm.adjustLimit(metricId, isMax, step),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Builds endpoint-1 reading widgets: single attributes, concentration cards, humidity & temperature.
+  List<Widget> _buildEndpointReadingWidgets(
+    BuildContext context,
+    AirSensorState st,
+    AirSensorViewModel vm,
+  ) {
+    final readings = Map<String, String>.from(st.readings);
+    final widgets = <Widget>[];
+
+    // --- Concentration triplets (Max / Measured / Min) ---
+    final groups = <String, Map<String, String>>{};
+    for (final e in readings.entries.toList()) {
+      final m = _concentrationKey.firstMatch(e.key);
+      if (m == null) continue;
+      final base = m.group(1)!;
+      final suffix = m.group(2)!;
+      groups.putIfAbsent(base, () => {});
+      groups[base]![suffix] = e.value;
+    }
+    for (final base in groups.keys) {
+      readings.removeWhere((k, _) {
+        final m = _concentrationKey.firstMatch(k);
+        return m != null && m.group(1) == base;
+      });
+    }
+
+    final humidity = <String, String>{};
+    final temperature = <String, String>{};
+    for (final e in readings.entries.toList()) {
+      if (e.key.startsWith('matterRelativeHumidity')) {
+        humidity[e.key] = e.value;
+      } else if (e.key.startsWith('matterTemperature')) {
+        temperature[e.key] = e.value;
+      }
+    }
+    humidity.forEach((k, _) => readings.remove(k));
+    temperature.forEach((k, _) => readings.remove(k));
+
+    // --- Singles (remaining keys), stable sort ---
+    final singleKeys = readings.keys.toList()..sort();
+
+    for (final key in singleKeys) {
+      widgets.add(_readingRow(context, _prettyKey(key), readings[key] ?? ''));
+    }
+
+    // Concentration cards: consistent order
+    final bases = groups.keys.toList()
+      ..sort((a, b) => _concentrationTitle(a).compareTo(_concentrationTitle(b)));
+    for (final base in bases) {
+      final g = groups[base]!;
+      final rows = <Widget>[];
+      if (g.containsKey('Max')) {
+        rows.add(_limitAdjustRow(context, vm, base, true, 'Max', g['Max'] ?? ''));
+      }
+      if (g.containsKey('Measured')) {
+        rows.add(_miniRow(context, 'Measured', g['Measured'] ?? ''));
+      }
+      if (g.containsKey('Min')) {
+        rows.add(_limitAdjustRow(context, vm, base, false, 'Min', g['Min'] ?? ''));
+      }
+      if (rows.isNotEmpty) {
+        widgets.add(
+          _groupCard(
+            context,
+            title: '${_concentrationTitle(base)} concentration',
+            children: rows,
+          ),
+        );
+      }
+    }
+
+    if (humidity.isNotEmpty) {
+      const humidityHandled = {
+        'matterRelativeHumidityMaxPercent',
+        'matterRelativeHumidityMinPercent',
+        'matterRelativeHumidityPercent',
+        'matterRelativeHumidityTolerancePercent',
+      };
+      final rows = <Widget>[];
+      if (humidity.containsKey('matterRelativeHumidityMaxPercent')) {
+        rows.add(_limitAdjustRow(
+          context,
+          vm,
+          'relativeHumidity',
+          true,
+          'Max %',
+          humidity['matterRelativeHumidityMaxPercent'] ?? '',
+        ));
+      }
+      if (humidity.containsKey('matterRelativeHumidityMinPercent')) {
+        rows.add(_limitAdjustRow(
+          context,
+          vm,
+          'relativeHumidity',
+          false,
+          'Min %',
+          humidity['matterRelativeHumidityMinPercent'] ?? '',
+        ));
+      }
+      for (final k in [
+        'matterRelativeHumidityPercent',
+        'matterRelativeHumidityTolerancePercent',
+      ]) {
+        if (humidity.containsKey(k)) {
+          rows.add(_miniRow(
+            context,
+            _prettyKey(k.replaceFirst('matterRelativeHumidity', '')),
+            humidity[k] ?? '',
+          ));
+        }
+      }
+      for (final k in humidity.keys.toList()..sort()) {
+        if (humidityHandled.contains(k)) continue;
+        rows.add(_miniRow(
+          context,
+          _prettyKey(k.replaceFirst('matterRelativeHumidity', '')),
+          humidity[k] ?? '',
+        ));
+      }
+      widgets.add(_groupCard(context, title: 'Relative humidity', children: rows));
+    }
+
+    if (temperature.isNotEmpty) {
+      const temperatureHandled = {
+        'matterTemperatureMaxC',
+        'matterTemperatureMinC',
+        'matterTemperatureMeasuredC',
+        'matterTemperatureToleranceC',
+      };
+      final rows = <Widget>[];
+      if (temperature.containsKey('matterTemperatureMaxC')) {
+        rows.add(_limitAdjustRow(
+          context,
+          vm,
+          'temperature',
+          true,
+          'Max °C',
+          temperature['matterTemperatureMaxC'] ?? '',
+        ));
+      }
+      if (temperature.containsKey('matterTemperatureMinC')) {
+        rows.add(_limitAdjustRow(
+          context,
+          vm,
+          'temperature',
+          false,
+          'Min °C',
+          temperature['matterTemperatureMinC'] ?? '',
+        ));
+      }
+      for (final k in [
+        'matterTemperatureMeasuredC',
+        'matterTemperatureToleranceC',
+      ]) {
+        if (temperature.containsKey(k)) {
+          rows.add(_miniRow(
+            context,
+            _prettyKey(k.replaceFirst('matterTemperature', '')),
+            temperature[k] ?? '',
+          ));
+        }
+      }
+      for (final k in temperature.keys.toList()..sort()) {
+        if (temperatureHandled.contains(k)) continue;
+        rows.add(_miniRow(
+          context,
+          _prettyKey(k.replaceFirst('matterTemperature', '')),
+          temperature[k] ?? '',
+        ));
+      }
+      widgets.add(_groupCard(context, title: 'Temperature', children: rows));
+    }
+
+    return widgets;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<AirSensorViewModel, SmartHomeViewModel>(
@@ -58,39 +438,19 @@ class _AirSensorControlBodyState extends State<_AirSensorControlBody> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             if (ModalRoute.of(context)?.isCurrent != true) return;
-            if (result.status == UiStatus.success) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(result.data!), backgroundColor: Colors.green),
-              );
-              sensorVm.clearOperationResult();
-              if (result.data == AirSensorViewModel.labelUpdatedMessage) {
-                homeVm.loadDevices();
-              }
-            } else if (result.status == UiStatus.error) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(result.message!), backgroundColor: Colors.red),
-              );
-              sensorVm.clearOperationResult();
+            sensorVm.clearOperationResult();
+            if (result.status == UiStatus.success &&
+                result.data == AirSensorViewModel.labelUpdatedMessage) {
+              homeVm.loadDevices();
             }
           });
         }
 
         if (homeVm.operationResult != null && ModalRoute.of(context)?.isCurrent == true) {
-          final result = homeVm.operationResult!;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             if (ModalRoute.of(context)?.isCurrent != true) return;
-            if (result.status == UiStatus.success) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(result.data!), backgroundColor: Colors.green),
-              );
-              homeVm.clearOperationResult();
-            } else if (result.status == UiStatus.error) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(result.message!), backgroundColor: Colors.red),
-              );
-              homeVm.clearOperationResult();
-            }
+            homeVm.clearOperationResult();
           });
         }
 
@@ -104,20 +464,22 @@ class _AirSensorControlBodyState extends State<_AirSensorControlBody> {
         if (sensorVm.state.status == UiStatus.loading && sensorVm.state.data == null) {
           body = const Center(child: CircularProgressIndicator());
         } else if (sensorVm.state.status == UiStatus.error) {
-          body = Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Error: ${sensorVm.state.message}', textAlign: TextAlign.center),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
+          body = SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildAlertsCard(context),
+                const SizedBox(height: 24),
+                Text('Error: ${sensorVm.state.message}', textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                Center(
+                  child: ElevatedButton(
                     onPressed: () => sensorVm.load(),
                     child: const Text('Retry'),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           );
         } else {
@@ -157,21 +519,11 @@ class _AirSensorControlBodyState extends State<_AirSensorControlBody> {
                                       style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                                     ),
                                     Text(
-                                      'Device: ${listed.deviceClass}',
+                                      listed.driver.isNotEmpty
+                                          ? 'Class: ${listed.deviceClass} · Driver: ${listed.driver}'
+                                          : 'Class: ${listed.deviceClass}',
                                       style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                                     ),
-                                    if (st.matterAirQuality != null) ...[
-                                      const SizedBox(height: 8),
-                                      Chip(
-                                        label: Text('Air quality: ${st.matterAirQuality}'),
-                                        visualDensity: VisualDensity.compact,
-                                      ),
-                                    ],
-                                    if (st.endpointType != null)
-                                      Text(
-                                        'Type: ${st.endpointType}',
-                                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                                      ),
                                   ],
                                 ),
                               ),
@@ -179,53 +531,10 @@ class _AirSensorControlBodyState extends State<_AirSensorControlBody> {
                           ),
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      _buildAlertsCard(context),
                       const SizedBox(height: 16),
-                      Text(
-                        'Sensor readings (endpoint 1)',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...st.sortedReadingKeys().where((k) => k != 'label').map((key) {
-                        final val = st.readings[key] ?? '';
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest
-                                  .withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  flex: 5,
-                                  child: Text(
-                                    _prettyKey(key),
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.grey.shade800,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 4,
-                                  child: Text(
-                                    val,
-                                    textAlign: TextAlign.end,
-                                    style: Theme.of(context).textTheme.bodyMedium,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }),
+                      ..._buildEndpointReadingWidgets(context, st, sensorVm),
                     ],
                   ),
                 ),

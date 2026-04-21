@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'repositories/router_repository.dart';
@@ -21,10 +23,13 @@ import 'screens/about_router_screen.dart';
 import 'screens/troubleshooting_screen.dart';
 import 'screens/firmware_upgrade_screen.dart';
 import 'models/models.dart';
+import 'services/air_sensor_background_scheduler.dart';
+import 'services/air_sensor_notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+  await AirSensorNotificationService.instance.initialize();
+
   // Simple check for initial route
   final mac = await RouterMacManager.getMac();
   final initialRoute = (mac.isEmpty || mac == "mac:") ? '/mac_address' : '/overview';
@@ -35,9 +40,45 @@ void main() async {
         ChangeNotifierProvider(create: (_) => RouterViewModel()),
         ChangeNotifierProvider(create: (_) => SmartHomeViewModel()),
       ],
-      child: MyApp(initialRoute: initialRoute),
+      child: _PostFrameBootstrap(
+        child: MyApp(initialRoute: initialRoute),
+      ),
     ),
   );
+}
+
+/// Defers Android alarm registration until after the first frame so native
+/// scheduling does not run during FlutterActivity predraw.
+class _PostFrameBootstrap extends StatefulWidget {
+  final Widget child;
+
+  const _PostFrameBootstrap({required this.child});
+
+  @override
+  State<_PostFrameBootstrap> createState() => _PostFrameBootstrapState();
+}
+
+class _PostFrameBootstrapState extends State<_PostFrameBootstrap> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _afterFirstFrame());
+  }
+
+  Future<void> _afterFirstFrame() async {
+    if (!mounted) return;
+    try {
+      if (Platform.isAndroid) {
+        await AirSensorBackgroundScheduler.initializePlugin();
+        if (await AirSensorNotificationService.instance.alertsEnabled()) {
+          await AirSensorBackgroundScheduler.registerPeriodic();
+        }
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class MyApp extends StatelessWidget {

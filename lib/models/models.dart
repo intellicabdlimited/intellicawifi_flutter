@@ -114,6 +114,8 @@ class SmartDevice {
   final String label;
   /// Device class from API: e.g. "light", "plug", "thermostat", "doorlock", "sensor".
   final String deviceClass;
+  /// Matter driver id from list output, e.g. `matterAirQualitySensor` (empty if unknown).
+  final String driver;
   final int hue;
   final int brightness;
   final int saturation;
@@ -123,6 +125,7 @@ class SmartDevice {
     this.isOn = true,
     this.label = "Unknown Device",
     this.deviceClass = "unknown",
+    this.driver = "",
     this.hue = 0,
     this.brightness = 100,
     this.saturation = 100,
@@ -133,6 +136,7 @@ class SmartDevice {
     bool? isOn,
     String? label,
     String? deviceClass,
+    String? driver,
     int? hue,
     int? brightness,
     int? saturation,
@@ -142,6 +146,7 @@ class SmartDevice {
       isOn: isOn ?? this.isOn,
       label: label ?? this.label,
       deviceClass: deviceClass ?? this.deviceClass,
+      driver: driver ?? this.driver,
       hue: hue ?? this.hue,
       brightness: brightness ?? this.brightness,
       saturation: saturation ?? this.saturation,

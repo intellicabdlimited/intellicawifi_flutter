@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
+
 import '../models/models.dart';
 import '../repositories/smart_home_repository.dart';
+import '../services/air_sensor_limits_store.dart';
+import '../services/air_sensor_notification_service.dart';
 import '../utils/ui_state.dart';
 
 class SmartHomeViewModel extends ChangeNotifier {
@@ -57,6 +60,7 @@ class SmartHomeViewModel extends ChangeNotifier {
     }
     notifyListeners();
   }
+
   Future<void> loadWifiConfig() async {
     try {
       final config = await _repository.getBartonWifiConfig();
@@ -177,6 +181,8 @@ class SmartHomeViewModel extends ChangeNotifier {
       final success = await _repository.removeDeviceViaBartonRemoveCommand(nodeId);
       if (success) {
         await _repository.removeDeviceConfig(nodeId);
+        await AirSensorNotificationService.instance.clearEdgeState(nodeId);
+        await AirSensorLimitsStore.instance.clear(nodeId);
         _operationResult = UiState.success("Device removed successfully");
         await Future.delayed(const Duration(seconds: 5));
         loadDevices();
@@ -216,6 +222,14 @@ class SmartHomeViewModel extends ChangeNotifier {
 
         if (status == "commissionedsuccessfully") {
           _operationResult = UiState.success("Device commissioned successfully");
+          if (nodeId.isNotEmpty) {
+            try {
+              final st = await _repository.getAirSensorState(nodeId);
+              if (st != null) {
+                await AirSensorLimitsStore.instance.seedFromReadingsIfEmpty(nodeId, st.readings);
+              }
+            } catch (_) {}
+          }
         } else {
            _operationResult = UiState.error("Failed to commission device");
         }

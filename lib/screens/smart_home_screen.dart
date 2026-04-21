@@ -235,12 +235,16 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
     );
   }
 
+  bool _isMatterAirSensor(SmartDevice d) {
+    return d.driver == 'matterAirQualitySensor' || d.deviceClass == 'sensor';
+  }
+
   void _openDeviceControl(SmartDevice device) {
     if (device.deviceClass == "thermostat") {
       Navigator.pushNamed(context, '/thermostat_control', arguments: device);
     } else if (device.deviceClass == "doorlock") {
       Navigator.pushNamed(context, '/door_lock_control', arguments: device);
-    } else if (device.deviceClass == "sensor") {
+    } else if (_isMatterAirSensor(device)) {
       Navigator.pushNamed(context, '/air_sensor_control', arguments: device);
     } else if (device.deviceClass == "light") {
       Navigator.pushNamed(context, '/light_control', arguments: device);
@@ -255,7 +259,7 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
     final isLight = device.deviceClass == "light";
     final isThermostat = device.deviceClass == "thermostat";
     final isDoorLock = device.deviceClass == "doorlock";
-    final isAirSensor = device.deviceClass == "sensor";
+    final isAirSensor = _isMatterAirSensor(device);
     IconData icon;
     Color iconColor;
     if (isThermostat) {
@@ -290,7 +294,12 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(device.label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    Text("Class: ${device.deviceClass}", style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                    Text(
+                      device.driver.isNotEmpty
+                          ? "Class: ${device.deviceClass} · Driver: ${device.driver}"
+                          : "Class: ${device.deviceClass}",
+                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                    ),
                   ],
                 ),
               ),
