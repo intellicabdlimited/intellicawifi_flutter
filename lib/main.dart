@@ -16,6 +16,7 @@ import 'screens/light_control_screen.dart';
 import 'screens/plug_control_screen.dart';
 import 'screens/thermostat_control_screen.dart';
 import 'screens/door_lock_control_screen.dart';
+import 'screens/motion_sensor_control_screen.dart';
 import 'screens/about_router_screen.dart';
 import 'screens/troubleshooting_screen.dart';
 import 'screens/firmware_upgrade_screen.dart';
@@ -92,6 +93,12 @@ class MyApp extends StatelessWidget {
           final device = settings.arguments as SmartDevice;
           return MaterialPageRoute(
             builder: (context) => DoorLockControlScreen(device: device),
+          );
+        }
+        if (settings.name == '/motion_sensor_control') {
+          final device = settings.arguments as SmartDevice;
+          return MaterialPageRoute(
+            builder: (context) => MotionSensorControlScreen(device: device),
           );
         }
         return null;

@@ -5,6 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class SmartHomeRepository {
   final ApiService _api = ApiService();
+  static const String _associatedDevicesParam = "Device.WiFi.AccessPoint.10001.AssociatedDevice.";
+  static const String _hostsParam = "Device.Hosts.Host.";
+  static const String _wanIpParam = "Device.IP.Interface.1.IPv4Address.1.IPAddress";
 
   Future<List<SmartDevice>> listDevices() async {
     final deviceMac = await RouterMacManager.getMac();
@@ -236,7 +239,9 @@ class SmartHomeRepository {
       final devices = <SmartDevice>[];
       String? currentId;
 
-      final idAndClassRegex = RegExp(r'^\s*([0-9a-fA-F]+):\s*Class:\s*(\w+)');
+      final idClassDriverRegex = RegExp(
+        r'^\s*([0-9a-fA-F]+):\s*Class:\s*([^,]+?)(?:\s*,\s*Driver:\s*([^\s,]+))?\s*$',
+      );
       final labelRegex = RegExp(r'Label:\s*(.*)');
 
       for (var line in lines) {
@@ -244,15 +249,17 @@ class SmartHomeRepository {
         if (trimmed.isEmpty) continue;
         if (trimmed.startsWith("barton-core>")) continue;
 
-        final idClassMatch = idAndClassRegex.firstMatch(line);
+        final idClassMatch = idClassDriverRegex.firstMatch(line);
         if (idClassMatch != null) {
           currentId = idClassMatch.group(1);
-          final deviceClass = (idClassMatch.group(2) ?? "light").toLowerCase();
+          final deviceClass = (idClassMatch.group(2) ?? "light").trim().toLowerCase();
+          final driver = (idClassMatch.group(3) ?? "").trim();
           if (currentId != null) {
             devices.add(SmartDevice(
               nodeId: currentId,
               label: "Unknown Device",
               deviceClass: deviceClass,
+              driver: driver,
             ));
           }
         } else if (currentId != null && line.contains("Label:")) {
@@ -278,6 +285,79 @@ class SmartHomeRepository {
           .map((id) => SmartDevice(nodeId: id, deviceClass: "light"))
           .toList();
     }
+  }
+
+  /// Returns Banana Pi / Barton Core IP to use as MQTT broker host.
+  Future<String?> getBartonCoreIpAddress() async {
+    final deviceMac = await RouterMacManager.getMac();
+
+    // Use the same WAN IP source shown in About Router.
+    try {
+      final wanResponse = await _api.getDeviceParameter(deviceMac, _wanIpParam);
+      final wanIp = wanResponse.parameters?.firstOrNull?.getStringValue().trim() ?? "";
+      if (wanIp.isNotEmpty && wanIp != "N/A") {
+        return wanIp;
+      }
+    } catch (_) {}
+
+    try {
+      final response = await _api.getDeviceParameter(deviceMac, _hostsParam);
+      final topParams = response.parameters ?? [];
+      final flatParams = topParams.expand((p) => p.asParameterList()).toList();
+      final grouped = _groupParamsByIndex(flatParams, RegExp(r'Host\.(\d+)\.'));
+
+      for (final params in grouped.values) {
+        final hostName = _readParamValue(params, "HostName").toLowerCase();
+        final ip = _readParamValue(params, "IPAddress");
+        if (ip.isNotEmpty && (hostName.contains("barton") || hostName.contains("banana"))) {
+          return ip;
+        }
+      }
+    } catch (_) {}
+
+    // Fallback: try AssociatedDevice list.
+    try {
+      final response = await _api.getDeviceParameter(deviceMac, _associatedDevicesParam);
+      final topParams = response.parameters ?? [];
+      final flatParams = topParams.expand((p) => p.asParameterList()).toList();
+      final grouped =
+          _groupParamsByIndex(flatParams, RegExp(r'AssociatedDevice\.(\d+)\.'));
+
+      for (final params in grouped.values) {
+        final hostName = _readParamValue(params, "HostName").toLowerCase();
+        final ip = _readParamValue(params, "IPAddress");
+        if (ip.isNotEmpty && (hostName.contains("barton") || hostName.contains("banana"))) {
+          return ip;
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  Map<String, List<Parameter>> _groupParamsByIndex(
+    List<Parameter> params,
+    RegExp indexRegex,
+  ) {
+    final result = <String, List<Parameter>>{};
+    for (final param in params) {
+      final match = indexRegex.firstMatch(param.name);
+      if (match == null) continue;
+      final index = match.group(1)!;
+      result.putIfAbsent(index, () => []).add(param);
+    }
+    return result;
+  }
+
+  String _readParamValue(List<Parameter> params, String suffix) {
+    return params
+        .firstWhere(
+          (p) => p.name.endsWith(suffix),
+          orElse: () => Parameter(name: "", dataType: 0, value: null),
+        )
+        .getStringValue()
+        .replaceAll("N/A", "")
+        .trim();
   }
   Future<void> saveDeviceConfig(SmartDevice device) async {
     final prefs = await SharedPreferences.getInstance();

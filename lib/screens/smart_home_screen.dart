@@ -236,7 +236,9 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
   }
 
   void _openDeviceControl(SmartDevice device) {
-    if (device.deviceClass == "thermostat") {
+    if (device.driver == "matterOccupancySensor") {
+      Navigator.pushNamed(context, '/motion_sensor_control', arguments: device);
+    } else if (device.deviceClass == "thermostat") {
       Navigator.pushNamed(context, '/thermostat_control', arguments: device);
     } else if (device.deviceClass == "doorlock") {
       Navigator.pushNamed(context, '/door_lock_control', arguments: device);
@@ -253,11 +255,15 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
     final isLight = device.deviceClass == "light";
     final isThermostat = device.deviceClass == "thermostat";
     final isDoorLock = device.deviceClass == "doorlock";
+    final isMotionSensor = device.driver == "matterOccupancySensor";
     IconData icon;
     Color iconColor;
     if (isThermostat) {
       icon = Icons.thermostat;
       iconColor = Colors.blue.shade700;
+    } else if (isMotionSensor) {
+      icon = Icons.motion_photos_on;
+      iconColor = Colors.teal;
     } else if (isDoorLock) {
       icon = Icons.door_front_door_outlined;
       iconColor = Theme.of(context).colorScheme.primary;
@@ -284,11 +290,19 @@ class _SmartHomeScreenState extends State<SmartHomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(device.label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    Text("Class: ${device.deviceClass}", style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                    Text(
+                      "Class: ${device.deviceClass}",
+                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                    ),
+                    if (device.driver.isNotEmpty)
+                      Text(
+                        "Driver: ${device.driver}",
+                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
                   ],
                 ),
               ),
-              if (!isThermostat && !isDoorLock)
+              if (!isThermostat && !isDoorLock && !isMotionSensor)
                 Switch(
                   value: device.isOn,
                   onChanged: (val) => vm.toggleDevice(device.nodeId, device.isOn),
