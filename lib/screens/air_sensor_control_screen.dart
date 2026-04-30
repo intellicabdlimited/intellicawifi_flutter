@@ -1,12 +1,10 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
-import '../utils/ui_state.dart';
 import '../services/air_sensor_background_scheduler.dart';
 import '../services/air_sensor_notification_service.dart';
+import '../utils/ui_state.dart';
 import '../services/air_sensor_threshold_evaluator.dart';
 import '../viewmodels/air_sensor_viewmodel.dart';
 import '../viewmodels/smart_home_viewmodel.dart';
@@ -35,54 +33,23 @@ class _AirSensorControlBody extends StatefulWidget {
 }
 
 class _AirSensorControlBodyState extends State<_AirSensorControlBody> {
-  bool _alertsPrefLoaded = false;
-  bool _alertsEnabled = true;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AirSensorViewModel>().load();
     });
-    _loadAlertsPref();
+    _requestNotificationPermissionOnEntry();
   }
 
-  Future<void> _loadAlertsPref() async {
-    final v = await AirSensorNotificationService.instance.alertsEnabled();
-    if (!mounted) return;
-    setState(() {
-      _alertsEnabled = v;
-      _alertsPrefLoaded = true;
-    });
-  }
-
-  Widget _buildAlertsCard(BuildContext context) {
-    return Card(
-      child: SwitchListTile(
-        title: const Text('Threshold alerts'),
-        subtitle: Text(
-          Platform.isAndroid
-              ? 'Local notification when measured is outside min–max. Android checks in the background every 2 minutes.'
-              : 'Local notification when measured is outside min–max. Background polling is only on Android.',
-        ),
-        value: _alertsEnabled,
-        onChanged: !_alertsPrefLoaded
-            ? null
-            : (value) async {
-                await AirSensorNotificationService.instance.setAlertsEnabled(value);
-                if (value) {
-                  await AirSensorNotificationService.instance.requestPostPermissions();
-                  if (Platform.isAndroid) {
-                    await Permission.scheduleExactAlarm.request();
-                  }
-                  await AirSensorBackgroundScheduler.registerPeriodic();
-                } else {
-                  await AirSensorBackgroundScheduler.cancel();
-                }
-                if (mounted) setState(() => _alertsEnabled = value);
-              },
-      ),
-    );
+  Future<void> _requestNotificationPermissionOnEntry() async {
+    await AirSensorNotificationService.instance.requestPostPermissions();
+    if (await AirSensorNotificationService.instance.alertsEnabled()) {
+      if (await Permission.scheduleExactAlarm.isDenied) {
+        await Permission.scheduleExactAlarm.request();
+      }
+      await AirSensorBackgroundScheduler.registerPeriodic();
+    }
   }
 
   String _prettyKey(String key) {
@@ -206,6 +173,40 @@ class _AirSensorControlBodyState extends State<_AirSensorControlBody> {
     return v.toStringAsFixed(2);
   }
 
+  Future<void> _showLimitEditDialog(
+    BuildContext context,
+    AirSensorViewModel vm,
+    String metricId,
+    bool isMax,
+    double currentValue,
+  ) async {
+    final controller = TextEditingController(text: _fmtDisplay(currentValue));
+    final parsed = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Edit ${isMax ? 'max' : 'min'} value'),
+        content: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false),
+          decoration: const InputDecoration(labelText: 'Value'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              final next = double.tryParse(controller.text.trim());
+              if (next == null) return;
+              Navigator.of(ctx).pop(next);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (parsed == null) return;
+    await vm.adjustLimit(metricId, isMax, parsed - currentValue);
+  }
+
   Widget _limitAdjustRow(
     BuildContext context,
     AirSensorViewModel vm,
@@ -237,10 +238,17 @@ class _AirSensorControlBodyState extends State<_AirSensorControlBody> {
           ),
           SizedBox(
             width: 64,
-            child: Text(
-              _fmtDisplay(value),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => _showLimitEditDialog(context, vm, metricId, isMax, value),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  _fmtDisplay(value),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
             ),
           ),
           IconButton(
@@ -469,8 +477,6 @@ class _AirSensorControlBodyState extends State<_AirSensorControlBody> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildAlertsCard(context),
-                const SizedBox(height: 24),
                 Text('Error: ${sensorVm.state.message}', textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 Center(
@@ -532,8 +538,6 @@ class _AirSensorControlBodyState extends State<_AirSensorControlBody> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      _buildAlertsCard(context),
-                      const SizedBox(height: 16),
                       ..._buildEndpointReadingWidgets(context, st, sensorVm),
                     ],
                   ),
